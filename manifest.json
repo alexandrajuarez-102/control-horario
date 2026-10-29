@@ -1,0 +1,20 @@
+{
+  "id": "./",
+  "name": "Control Horario",
+  "short_name": "Control Horario",
+  "description": "Aplicación de control horario de empleados.",
+  "lang": "es",
+  "start_url": "./index.php",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f3f6fb",
+  "theme_color": "#111c35",
+  "icons": [
+    {
+      "src": "./app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
