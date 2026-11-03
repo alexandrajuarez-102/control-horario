@@ -185,13 +185,24 @@ const editAssignmentTemplate = document.querySelector("#edit-assignment-template
 const editAssignmentStart = document.querySelector("#edit-assignment-start");
 const editAssignmentEnd = document.querySelector("#edit-assignment-end");
 const editAssignmentBreak = document.querySelector("#edit-assignment-break");
+let lastAssignmentEditTrigger = null;
 
-document.addEventListener("click", (event) => {
-    const target = event.target instanceof Element ? event.target : null;
-    const editButton = target?.closest("[data-edit-assignment]");
-    if (editButton && scheduleEditDialog instanceof HTMLDialogElement) {
+function closeScheduleEditDialog() {
+    if (!(scheduleEditDialog instanceof HTMLElement)) return;
+    scheduleEditDialog.classList.add("hidden");
+    scheduleEditDialog.setAttribute("aria-hidden", "true");
+    lastAssignmentEditTrigger?.focus();
+    lastAssignmentEditTrigger = null;
+}
+
+document.addEventListener("click", (e) => {
+    const target = e.target instanceof Element ? e.target : null;
+    const editButton = target?.closest(".btn-editar");
+    if (editButton) {
+        console.log('Clic en editar detectado');
         if (
-            !(editAssignmentId instanceof HTMLInputElement)
+            !(scheduleEditDialog instanceof HTMLElement)
+            || !(editAssignmentId instanceof HTMLInputElement)
             || !(editAssignmentEmployee instanceof HTMLSelectElement)
             || !(editAssignmentTemplate instanceof HTMLSelectElement)
             || !(editAssignmentStart instanceof HTMLInputElement)
@@ -199,21 +210,37 @@ document.addEventListener("click", (event) => {
             || !(editAssignmentBreak instanceof HTMLInputElement)
         ) {
             console.error("No se pudo preparar el formulario para editar el turno.");
+            window.alert("No se pudo abrir la edición del turno. Recarga la página e inténtalo de nuevo.");
             return;
         }
 
+        lastAssignmentEditTrigger = editButton;
         editAssignmentId.value = editButton.dataset.editAssignment || "";
         editAssignmentEmployee.value = editButton.dataset.employeeId || "";
         editAssignmentTemplate.value = editButton.dataset.templateId || "";
         editAssignmentStart.value = editButton.dataset.startDate || "";
         editAssignmentEnd.value = editButton.dataset.endDate || "";
         editAssignmentBreak.value = editButton.dataset.breakHours || "0";
-        scheduleEditDialog.showModal();
+
+        if (
+            !editAssignmentId.value
+            || editAssignmentEmployee.value !== editButton.dataset.employeeId
+            || editAssignmentTemplate.value !== editButton.dataset.templateId
+            || !editAssignmentStart.value
+        ) {
+            console.error("Los datos de la asignación no coinciden con las opciones del formulario.");
+            window.alert("No se pudieron cargar los datos de este turno. Recarga la página e inténtalo de nuevo.");
+            return;
+        }
+
+        scheduleEditDialog.classList.remove("hidden");
+        scheduleEditDialog.setAttribute("aria-hidden", "false");
+        editAssignmentEmployee.focus();
         return;
     }
 
-    if (target?.closest("[data-close-schedule-edit]") && scheduleEditDialog instanceof HTMLDialogElement) {
-        scheduleEditDialog.close();
+    if (target.closest("[data-close-schedule-edit]")) {
+        closeScheduleEditDialog();
     }
 });
 
@@ -228,11 +255,16 @@ editAssignmentTemplate?.addEventListener("change", () => {
 });
 
 scheduleEditDialog?.addEventListener("click", (event) => {
+    if (event.target === scheduleEditDialog) closeScheduleEditDialog();
+});
+
+document.addEventListener("keydown", (event) => {
     if (
-        event.target === scheduleEditDialog
-        && scheduleEditDialog instanceof HTMLDialogElement
+        event.key === "Escape"
+        && scheduleEditDialog instanceof HTMLElement
+        && !scheduleEditDialog.classList.contains("hidden")
     ) {
-        scheduleEditDialog.close();
+        closeScheduleEditDialog();
     }
 });
 
@@ -274,7 +306,13 @@ if (workedCanvas && staffCanvas && dashboardDataElement) {
     if (data && !data.error && typeof Chart !== "undefined") {
         const colors = {
             text: () => getComputedStyle(root).getPropertyValue("--muted").trim(),
-            grid: () => getComputedStyle(root).getPropertyValue("--border").trim()
+            grid: () => getComputedStyle(root).getPropertyValue("--border").trim(),
+            accent: () => getComputedStyle(root).getPropertyValue("--accent").trim(),
+            success: () => getComputedStyle(root).getPropertyValue("--success").trim(),
+            danger: () => getComputedStyle(root).getPropertyValue("--danger").trim(),
+            lavender: () => getComputedStyle(root).getPropertyValue("--lavender").trim(),
+            neutral: () => getComputedStyle(root).getPropertyValue("--muted").trim(),
+            warning: () => getComputedStyle(root).getPropertyValue("--warning").trim()
         };
         const chartInstances = [];
 
@@ -286,13 +324,13 @@ if (workedCanvas && staffCanvas && dashboardDataElement) {
                     {
                         label: "Horas trabajadas",
                         data: data.work.worked,
-                        backgroundColor: "#3156c9",
+                        backgroundColor: colors.accent(),
                         borderRadius: 6
                     },
                     {
                         label: "Horas extra",
                         data: data.work.overtime,
-                        backgroundColor: "#e89b32",
+                        backgroundColor: colors.warning(),
                         borderRadius: 6
                     }
                 ]
@@ -326,7 +364,7 @@ if (workedCanvas && staffCanvas && dashboardDataElement) {
                 labels: ["Trabajando", "De vacaciones", "De baja", "Fuera de jornada / en pausa"],
                 datasets: [{
                     data: [data.staff.working, data.staff.vacation, data.staff.sick, data.staff.off],
-                    backgroundColor: ["#147d58", "#3156c9", "#d65353", "#aab5c5"],
+                    backgroundColor: [colors.success(), colors.lavender(), colors.danger(), colors.neutral()],
                     borderWidth: 0
                 }]
             },
@@ -346,6 +384,17 @@ if (workedCanvas && staffCanvas && dashboardDataElement) {
         window.addEventListener("control-horario-theme-change", () => {
             for (const chart of chartInstances) {
                 chart.options.plugins.legend.labels.color = colors.text();
+                if (chart === chartInstances[0]) {
+                    chart.data.datasets[0].backgroundColor = colors.accent();
+                    chart.data.datasets[1].backgroundColor = colors.warning();
+                } else {
+                    chart.data.datasets[0].backgroundColor = [
+                        colors.success(),
+                        colors.lavender(),
+                        colors.danger(),
+                        colors.neutral()
+                    ];
+                }
                 if (chart.options.scales) {
                     for (const scale of Object.values(chart.options.scales)) {
                         scale.ticks.color = colors.text();

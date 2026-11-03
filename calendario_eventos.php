@@ -59,7 +59,7 @@ try {
             'title' => $event['titulo'],
             'start' => $event['fecha'],
             'allDay' => true,
-            'color' => $event['tipo'] === 'festivo' ? '#b42318' : '#3156c9',
+            'color' => $event['tipo'] === 'festivo' ? '#b96f5d' : '#82927d',
             'extendedProps' => ['tipo' => $event['tipo']],
         ],
         $query->fetchAll()

@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_NAME = "control-horario-static-v4";
+const CACHE_NAME = "control-horario-static-v6";
 const STATIC_FILES = [
     "manifest.json",
     "app-icon.svg",

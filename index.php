@@ -316,39 +316,57 @@ $absenceStatusLabels = [
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="Panel de control horario">
     <meta name="csrf-token" content="<?= htmlspecialchars($_SESSION['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
-    <meta name="theme-color" content="#111c35">
+    <meta name="theme-color" content="#393632">
     <link rel="manifest" href="manifest.json">
     <title>Control horario</title>
     <style>
         :root {
             color-scheme: light;
             font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-            color: #172033;
-            background: #f3f6fb;
-            --page-bg: #f3f6fb;
-            --surface: #fff;
-            --surface-muted: #f7f9fc;
-            --text: #172033;
-            --muted: #64718a;
-            --border: #e3e9f2;
-            --input-border: #cbd5e1;
-            --shadow: 0 16px 40px rgb(25 42 70 / 7%);
-            --sidebar-bg: #111c35;
-            --sidebar-text: #e6ecf7;
+            color: #3e3a36;
+            background: #f5f2ee;
+            --page-bg: #f5f2ee;
+            --surface: #fffdfa;
+            --surface-muted: #f2eee8;
+            --text: #3e3a36;
+            --muted: #766f68;
+            --border: #e7ded5;
+            --input-border: #cfc4b9;
+            --shadow: 0 16px 40px rgb(67 54 43 / 8%);
+            --sidebar-bg: #393632;
+            --sidebar-text: #f4eee8;
+            --accent: #82927d;
+            --accent-hover: #6f806a;
+            --accent-soft: #e8eee5;
+            --lavender: #91819d;
+            --lavender-soft: #eee9f1;
+            --danger: #b96f5d;
+            --danger-hover: #a65d4d;
+            --success: #66836a;
+            --warning: #a77740;
         }
 
         :root[data-theme="dark"] {
             color-scheme: dark;
-            --page-bg: #101725;
-            --surface: #192437;
-            --surface-muted: #202e44;
-            --text: #edf2fb;
-            --muted: #a4b1c6;
-            --border: #2b3a52;
-            --input-border: #465773;
-            --shadow: 0 16px 40px rgb(0 0 0 / 20%);
-            --sidebar-bg: #0b1220;
-            --sidebar-text: #e6ecf7;
+            --page-bg: #24211f;
+            --surface: #302c29;
+            --surface-muted: #3a3531;
+            --text: #f0e9e2;
+            --muted: #b9aea3;
+            --border: #4b433d;
+            --input-border: #62574f;
+            --shadow: 0 16px 40px rgb(0 0 0 / 24%);
+            --sidebar-bg: #302d2a;
+            --sidebar-text: #f4eee8;
+            --accent: #9baa95;
+            --accent-hover: #adbaa7;
+            --accent-soft: #3c493c;
+            --lavender: #b0a0bb;
+            --lavender-soft: #443c48;
+            --danger: #d18a78;
+            --danger-hover: #dfa08f;
+            --success: #91b095;
+            --warning: #d2a66d;
             background: var(--page-bg);
             color: var(--text);
         }
@@ -404,12 +422,12 @@ $absenceStatusLabels = [
             height: 38px;
             place-items: center;
             border-radius: 12px;
-            background: #3156c9;
+            background: var(--accent);
             font-size: 1.2rem;
         }
         .sidebar-label {
             margin: 0 10px 10px;
-            color: #8d9bb4;
+            color: #c1b6ab;
             font-size: .72rem;
             font-weight: 750;
             letter-spacing: .1em;
@@ -435,7 +453,7 @@ $absenceStatusLabels = [
         .sidebar-link:hover, .theme-toggle:hover { background: rgb(255 255 255 / 9%); }
         .sidebar-link.activo,
         .sidebar-link[aria-current="page"] {
-            background: #3156c9;
+            background: var(--accent);
             color: #fff;
             font-weight: 700;
         }
@@ -446,7 +464,7 @@ $absenceStatusLabels = [
         .sidebar-user {
             overflow: hidden;
             margin: 16px 8px 0;
-            color: #a4b1c6;
+            color: #b9aea3;
             font-size: .82rem;
             text-overflow: ellipsis;
             white-space: nowrap;
@@ -460,7 +478,7 @@ $absenceStatusLabels = [
             place-items: center;
             padding: 0 6px;
             border-radius: 999px;
-            background: #dc3545;
+            background: var(--danger);
             color: #fff;
             font-size: .72rem;
             font-weight: 800;
@@ -525,8 +543,8 @@ $absenceStatusLabels = [
         .logout-button {
             min-height: 40px;
             padding: 0 14px;
-            background: #e9eef8;
-            color: #3156c9;
+            background: var(--accent-soft);
+            color: var(--accent-hover);
         }
         .actions { display: flex; flex-wrap: wrap; gap: 12px; }
         .form-grid {
@@ -550,8 +568,8 @@ $absenceStatusLabels = [
             font: inherit;
         }
         .field input:focus-visible, .field select:focus-visible {
-            outline: 3px solid #b5caff;
-            border-color: #3156c9;
+            outline: 3px solid color-mix(in srgb, var(--accent) 35%, transparent);
+            border-color: var(--accent);
         }
         .form-actions { margin-top: 20px; }
 
@@ -568,17 +586,56 @@ $absenceStatusLabels = [
         }
 
         button:hover:not(:disabled) { filter: brightness(.94); transform: translateY(-1px); }
-        button:focus-visible { outline: 3px solid #91b4ff; outline-offset: 3px; }
+        button:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 3px; }
         button:disabled { cursor: wait; opacity: .65; }
-        .entry-button { background: #147d58; }
-        .exit-button { background: #3156c9; }
-        .submit-button { background: #3156c9; }
-        .approve-button { min-height: 38px; padding: 0 12px; background: #147d58; }
-        .reject-button { min-height: 38px; padding: 0 12px; background: #b42318; }
-        .reset-password-button { min-height: 38px; padding: 0 12px; background: #3156c9; }
-        .edit-assignment-button { min-height: 38px; margin-right: 6px; padding: 0 12px; background: #3156c9; }
-        .profile-button { min-height: 38px; margin-right: 6px; padding: 0 12px; background: #147d58; }
-        .profile-dialog, .schedule-edit-dialog {
+        .entry-button, .approve-button { background: var(--success); }
+        .exit-button, .submit-button { background: var(--accent); }
+        .reject-button { min-height: 38px; padding: 0 12px; background: var(--danger); }
+        .reset-password-button { min-height: 38px; padding: 0 12px; background: var(--lavender); }
+        .edit-assignment-button { min-height: 38px; padding: 0 12px; background: var(--accent); }
+        .profile-button { min-height: 38px; padding: 0 12px; background: var(--success); }
+        .assignment-actions {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+            white-space: nowrap;
+        }
+        .assignment-actions form { margin: 0; }
+        .assignment-actions button {
+            display: grid;
+            width: 38px;
+            min-height: 38px;
+            place-items: center;
+            padding: 0;
+            border: 0;
+            border-radius: 10px;
+            background: transparent;
+            color: var(--muted);
+            transition: background-color 140ms ease, color 140ms ease;
+        }
+        .assignment-actions button:hover:not(:disabled) {
+            transform: none;
+            filter: none;
+        }
+        .assignment-actions .edit-assignment-button:hover {
+            background: var(--accent-soft);
+            color: var(--accent-hover);
+        }
+        .assignment-actions .delete-assignment-button:hover {
+            background: color-mix(in srgb, var(--danger) 14%, transparent);
+            color: var(--danger);
+        }
+        .assignment-actions svg {
+            width: 18px;
+            height: 18px;
+            fill: none;
+            stroke: currentColor;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            stroke-width: 1.8;
+        }
+        .profile-dialog {
             width: min(900px, calc(100% - 24px));
             max-height: min(90vh, 900px);
             overflow-y: auto;
@@ -588,7 +645,29 @@ $absenceStatusLabels = [
             background: var(--surface);
             color: var(--text);
         }
-        .profile-dialog::backdrop, .schedule-edit-dialog::backdrop { background: rgb(10 18 32 / 65%); }
+        .profile-dialog::backdrop { background: rgb(45 39 34 / 62%); }
+        .schedule-edit-dialog {
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            display: grid;
+            place-items: center;
+            overflow-y: auto;
+            padding: 20px;
+            background: rgb(45 39 34 / 62%);
+        }
+        .schedule-edit-dialog.hidden { display: none !important; }
+        .schedule-edit-dialog-content {
+            width: min(900px, 100%);
+            max-height: min(90vh, 900px);
+            overflow-y: auto;
+            padding: clamp(20px, 4vw, 36px);
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            background: var(--surface);
+            color: var(--text);
+            box-shadow: var(--shadow);
+        }
         .profile-dialog-header, .schedule-edit-dialog-header {
             display: flex;
             align-items: flex-start;
@@ -597,7 +676,7 @@ $absenceStatusLabels = [
             margin-bottom: 20px;
         }
         .profile-dialog-header h2 { margin: 0; }
-        .profile-close-button { min-height: 38px; padding: 0 12px; background: #64718a; }
+        .profile-close-button { min-height: 38px; padding: 0 12px; background: var(--muted); }
         .profile-dialog .actions { margin-top: 16px; }
         .export-button {
             display: inline-flex;
@@ -606,17 +685,17 @@ $absenceStatusLabels = [
             margin-bottom: 16px;
             padding: 0 18px;
             border-radius: 10px;
-            background: #147d58;
+            background: var(--success);
             color: #fff;
             font-weight: 700;
             text-decoration: none;
         }
-        .export-button:hover { background: #106447; }
-        .status { margin: 0 0 18px; color: #64718a; }
-        .status[data-state="error"] { color: #b42318; }
-        .status[data-state="success"] { color: #147d58; }
-        .status[data-state="overtime"], .overtime-row { color: #a15c00; font-weight: 700; }
-        td[data-state="overtime"] { color: #a15c00; font-weight: 700; }
+        .export-button:hover { background: var(--accent-hover); }
+        .status { margin: 0 0 18px; color: var(--muted); }
+        .status[data-state="error"] { color: var(--danger); }
+        .status[data-state="success"] { color: var(--success); }
+        .status[data-state="overtime"], .overtime-row { color: var(--warning); font-weight: 700; }
+        td[data-state="overtime"] { color: var(--warning); font-weight: 700; }
 
         .table-wrap { overflow-x: auto; }
         table { width: 100%; border-collapse: collapse; text-align: left; }
@@ -629,8 +708,8 @@ $absenceStatusLabels = [
             display: inline-block;
             padding: 4px 9px;
             border-radius: 999px;
-            background: #edf2ff;
-            color: #3156c9;
+            background: var(--accent-soft);
+            color: var(--accent-hover);
             font-size: .82rem;
             font-weight: 650;
         }
@@ -650,26 +729,26 @@ $absenceStatusLabels = [
         .calendar-container { min-height: 600px; }
         .calendar-container .fc { color: var(--text); }
         .calendar-container .fc .fc-button-primary {
-            border-color: #3156c9;
-            background: #3156c9;
+            border-color: var(--accent);
+            background: var(--accent);
         }
-        .calendar-container .fc .fc-button-primary:disabled { background: #6f86c8; }
-        .calendar-container .fc .fc-button-primary:focus { box-shadow: 0 0 0 .2rem rgb(49 86 201 / 25%); }
-        .chart-error { color: #b42318; }
+        .calendar-container .fc .fc-button-primary:disabled { background: var(--muted); }
+        .calendar-container .fc .fc-button-primary:focus { box-shadow: 0 0 0 .2rem color-mix(in srgb, var(--accent) 30%, transparent); }
+        .chart-error { color: var(--danger); }
         :root[data-theme="dark"] input,
         :root[data-theme="dark"] select { background: var(--surface-muted); color: var(--text); }
-        :root[data-theme="dark"] .logout-button { background: var(--surface-muted); color: #a9bdff; }
-        :root[data-theme="dark"] .role-badge { background: #27395c; color: #b8c9ff; }
+        :root[data-theme="dark"] .logout-button { background: var(--surface-muted); color: var(--accent); }
+        :root[data-theme="dark"] .role-badge { background: var(--accent-soft); color: var(--accent); }
         :root[data-theme="dark"] .notification-count { color: #fff; }
         :root[data-theme="dark"] .status[data-state="error"] { color: #ff9a9a; }
-        :root[data-theme="dark"] .status[data-state="success"] { color: #83e0b2; }
+        :root[data-theme="dark"] .status[data-state="success"] { color: var(--success); }
         :root[data-theme="dark"] .calendar-container .fc-theme-standard td,
         :root[data-theme="dark"] .calendar-container .fc-theme-standard th,
         :root[data-theme="dark"] .calendar-container .fc-theme-standard .fc-scrollgrid {
             border-color: var(--border);
         }
         :root[data-theme="dark"] .status[data-state="overtime"],
-        :root[data-theme="dark"] td[data-state="overtime"] { color: #ffcd72; }
+        :root[data-theme="dark"] td[data-state="overtime"] { color: var(--warning); }
 
         @media (max-width: 900px) {
             .sidebar { width: 220px; }
@@ -1146,22 +1225,43 @@ $absenceStatusLabels = [
                                             </td>
                                             <td><?= htmlspecialchars($assignment['fecha_inicio'] . ' – ' . ($assignment['fecha_fin'] ?? 'sin fecha de fin'), ENT_QUOTES, 'UTF-8') ?></td>
                                             <td>
+                                                <div class="assignment-actions">
                                                 <button
-                                                    class="edit-assignment-button"
+                                                    class="edit-assignment-button btn-editar"
                                                     type="button"
+                                                    aria-label="Editar asignación de <?= htmlspecialchars($assignment['empleado'], ENT_QUOTES, 'UTF-8') ?>"
+                                                    title="Editar"
                                                     data-edit-assignment="<?= (int) $assignment['id'] ?>"
                                                     data-employee-id="<?= (int) $assignment['usuario_id'] ?>"
                                                     data-template-id="<?= (int) $assignment['plantilla_id'] ?>"
                                                     data-start-date="<?= htmlspecialchars($assignment['fecha_inicio'], ENT_QUOTES, 'UTF-8') ?>"
                                                     data-end-date="<?= htmlspecialchars($assignment['fecha_fin'] ?? '', ENT_QUOTES, 'UTF-8') ?>"
                                                     data-break-hours="<?= htmlspecialchars(number_format((float) $assignment['horas_descanso'], 2, '.', ''), ENT_QUOTES, 'UTF-8') ?>"
-                                                >Editar</button>
+                                                >
+                                                    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                                        <path d="M12 20h9"></path>
+                                                        <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"></path>
+                                                    </svg>
+                                                </button>
                                                 <form action="gestionar_turnos.php" method="post" onsubmit="return confirm('¿Eliminar esta asignación de turno? El usuario y sus fichajes no se modificarán.');">
                                                     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
                                                     <input type="hidden" name="action" value="delete">
                                                     <input type="hidden" name="asignacion_id" value="<?= (int) $assignment['id'] ?>">
-                                                    <button class="reject-button" type="submit">Eliminar</button>
+                                                    <button
+                                                        class="delete-assignment-button"
+                                                        type="submit"
+                                                        aria-label="Eliminar asignación de <?= htmlspecialchars($assignment['empleado'], ENT_QUOTES, 'UTF-8') ?>"
+                                                        title="Eliminar"
+                                                    >
+                                                        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                                            <path d="M3 6h18"></path>
+                                                            <path d="M8 6V4h8v2"></path>
+                                                            <path d="m19 6-1 14H6L5 6"></path>
+                                                            <path d="M10 11v5M14 11v5"></path>
+                                                        </svg>
+                                                    </button>
                                                 </form>
+                                                </div>
                                             </td>
                                         </tr>
                                     <?php endforeach; ?>
@@ -1170,7 +1270,8 @@ $absenceStatusLabels = [
                         </table>
                     </div>
                 <?php endif; ?>
-                <dialog class="schedule-edit-dialog" id="schedule-edit-dialog" aria-labelledby="schedule-edit-title">
+                <div class="schedule-edit-dialog hidden" id="schedule-edit-dialog" role="dialog" aria-modal="true" aria-labelledby="schedule-edit-title" aria-hidden="true">
+                    <div class="schedule-edit-dialog-content">
                     <div class="schedule-edit-dialog-header">
                         <h2 id="schedule-edit-title">Editar asignación de turno</h2>
                         <button class="profile-close-button" type="button" data-close-schedule-edit>Cerrar</button>
@@ -1219,7 +1320,8 @@ $absenceStatusLabels = [
                             <button class="submit-button" type="submit">Guardar cambios</button>
                         </div>
                     </form>
-                </dialog>
+                    </div>
+                </div>
             </section>
 
             <section class="card seccion-panel" id="attendance-history" aria-labelledby="attendance-history-title">
