@@ -126,12 +126,12 @@ try {
             $employeeId === false
             || $employeeId < 1
             || !is_string($type)
-            || !in_array($type, ['baja_medica', 'retraso'], true)
+            || !in_array($type, ['baja_medica', 'retraso', 'falta'], true)
             || !is_string($startDate)
             || !is_string($endDate)
             || !isValidDate($startDate)
             || ($endDate !== '' && (!isValidDate($endDate) || $endDate < $startDate))
-            || ($type === 'retraso' && $endDate !== '' && $endDate !== $startDate)
+            || (in_array($type, ['retraso', 'falta'], true) && $endDate !== '' && $endDate !== $startDate)
             || textLength($observations) > 1000
         ) {
             redirectToAbsences('absence_invalid');

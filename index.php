@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+header('Content-Type: text/html; charset=UTF-8');
+
 require_once __DIR__ . '/sesion.php';
 startSecureSession();
 $user = getAuthenticatedUser();
@@ -22,6 +24,13 @@ $flashMessages = [
     'shift_created' => ['state' => 'success', 'text' => 'Turno asignado correctamente.'],
     'shift_invalid' => ['state' => 'error', 'text' => 'Los datos del turno no son válidos o se solapan con otra asignación.'],
     'shift_error' => ['state' => 'error', 'text' => 'No se pudo asignar el turno. Inténtalo más tarde.'],
+    'template_created' => ['state' => 'success', 'text' => 'Plantilla de turno creada correctamente.'],
+    'template_invalid' => ['state' => 'error', 'text' => 'Revisa el nombre, el horario y los días del ciclo.'],
+    'template_duplicate' => ['state' => 'error', 'text' => 'Ya existe una plantilla o turno con ese nombre.'],
+    'template_error' => ['state' => 'error', 'text' => 'No se pudo crear la plantilla. Inténtalo más tarde.'],
+    'calendar_created' => ['state' => 'success', 'text' => 'Evento añadido al calendario compartido.'],
+    'calendar_invalid' => ['state' => 'error', 'text' => 'Revisa el título, la fecha y el tipo de evento.'],
+    'calendar_error' => ['state' => 'error', 'text' => 'No se pudo guardar el evento. Inténtalo más tarde.'],
     'absence_requested' => ['state' => 'success', 'text' => 'Solicitud enviada para revisión.'],
     'absence_reviewed' => ['state' => 'success', 'text' => 'Solicitud actualizada.'],
     'absence_recorded' => ['state' => 'success', 'text' => 'Incidencia registrada.'],
@@ -35,7 +44,7 @@ $usersError = false;
 $attendanceRecords = [];
 $attendanceError = false;
 $employees = [];
-$shifts = [];
+$shiftTemplates = [];
 $shiftAssignments = [];
 $scheduleError = false;
 $absenceRecords = [];
@@ -96,12 +105,11 @@ if ($user['rol'] === 'admin') {
         $employees = $statement->fetchAll();
 
         $statement = $connection->query(
-            'SELECT id, nombre, tipo, hora_inicio, hora_fin, dias_trabajo, dias_descanso
-             FROM turnos
-             WHERE activo = TRUE
-             ORDER BY nombre ASC'
+            'SELECT id, nombre_turno, tipo, hora_inicio, hora_fin, dias_trabajo, dias_descanso
+             FROM plantillas_turnos
+             ORDER BY nombre_turno ASC'
         );
-        $shifts = $statement->fetchAll();
+        $shiftTemplates = $statement->fetchAll();
 
         $statement = $connection->query(
             'SELECT asignaciones_turno.id, usuarios.nombre AS empleado, turnos.nombre AS turno,
@@ -287,6 +295,7 @@ $absenceLabels = [
     'asuntos_familiares' => 'Asuntos familiares',
     'baja_medica' => 'Baja médica',
     'retraso' => 'Retraso',
+    'falta' => 'Falta',
 ];
 $absenceStatusLabels = [
     'pendiente' => 'Pendiente',
@@ -561,6 +570,7 @@ $absenceStatusLabels = [
         .submit-button { background: #3156c9; }
         .approve-button { min-height: 38px; padding: 0 12px; background: #147d58; }
         .reject-button { min-height: 38px; padding: 0 12px; background: #b42318; }
+        .reset-password-button { min-height: 38px; padding: 0 12px; background: #3156c9; }
         .export-button {
             display: inline-flex;
             align-items: center;
@@ -609,6 +619,14 @@ $absenceStatusLabels = [
         .dashboard-card h2 { margin-bottom: 5px; }
         .chart-description { margin: 0 0 18px; color: var(--muted); font-size: .88rem; }
         .chart-wrap { position: relative; min-height: 270px; }
+        .calendar-container { min-height: 600px; }
+        .calendar-container .fc { color: var(--text); }
+        .calendar-container .fc .fc-button-primary {
+            border-color: #3156c9;
+            background: #3156c9;
+        }
+        .calendar-container .fc .fc-button-primary:disabled { background: #6f86c8; }
+        .calendar-container .fc .fc-button-primary:focus { box-shadow: 0 0 0 .2rem rgb(49 86 201 / 25%); }
         .chart-error { color: #b42318; }
         :root[data-theme="dark"] input,
         :root[data-theme="dark"] select { background: var(--surface-muted); color: var(--text); }
@@ -617,6 +635,11 @@ $absenceStatusLabels = [
         :root[data-theme="dark"] .notification-count { color: #fff; }
         :root[data-theme="dark"] .status[data-state="error"] { color: #ff9a9a; }
         :root[data-theme="dark"] .status[data-state="success"] { color: #83e0b2; }
+        :root[data-theme="dark"] .calendar-container .fc-theme-standard td,
+        :root[data-theme="dark"] .calendar-container .fc-theme-standard th,
+        :root[data-theme="dark"] .calendar-container .fc-theme-standard .fc-scrollgrid {
+            border-color: var(--border);
+        }
         :root[data-theme="dark"] .status[data-state="overtime"],
         :root[data-theme="dark"] td[data-state="overtime"] { color: #ffcd72; }
 
@@ -644,6 +667,7 @@ $absenceStatusLabels = [
             .form-grid, .form-grid-three { grid-template-columns: 1fr; }
             .dashboard-grid { gap: 14px; }
             .chart-wrap { min-height: 230px; }
+            .calendar-container { min-height: 520px; }
         }
     </style>
     <?php if ($user['rol'] === 'empleado'): ?>
@@ -651,6 +675,8 @@ $absenceStatusLabels = [
     <?php else: ?>
         <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js" defer></script>
     <?php endif; ?>
+    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/@fullcalendar/core@6.1.15/locales-all.global.min.js" defer></script>
     <script>
         (() => {
             try {
@@ -664,6 +690,7 @@ $absenceStatusLabels = [
         })();
     </script>
     <script src="dashboard.js" defer></script>
+    <script src="calendar.js" defer></script>
 </head>
 <body>
     <div class="app-shell">
@@ -679,6 +706,7 @@ $absenceStatusLabels = [
                     <a class="sidebar-link" href="#dashboard"><span class="sidebar-icon" aria-hidden="true">▦</span>Dashboard</a>
                     <a class="sidebar-link" href="#users"><span class="sidebar-icon" aria-hidden="true">♙</span>Usuarios</a>
                     <a class="sidebar-link" href="#schedules"><span class="sidebar-icon" aria-hidden="true">◷</span>Turnos</a>
+                    <a class="sidebar-link" href="#shift-templates" aria-controls="shift-templates"><span class="sidebar-icon" aria-hidden="true">＋</span>Plantillas de Turnos</a>
                     <a class="sidebar-link" href="#attendance-history"><span class="sidebar-icon" aria-hidden="true">▤</span>Fichajes</a>
                     <a class="sidebar-link" href="#absence-admin" aria-label="Permisos<?= $pendingAbsenceCount > 0 ? ', ' . $pendingAbsenceCount . ' solicitudes pendientes' : '' ?>">
                         <span class="sidebar-icon" aria-hidden="true">🔔</span>Permisos
@@ -695,6 +723,7 @@ $absenceStatusLabels = [
                     <?php endif; ?>
                     <a class="sidebar-link" href="#absence-request"><span class="sidebar-icon" aria-hidden="true">♧</span>Permisos</a>
                 <?php endif; ?>
+                <a class="sidebar-link" href="#calendar"><span class="sidebar-icon" aria-hidden="true">▦</span>Calendario</a>
             </nav>
             <div class="sidebar-spacer"></div>
             <button class="theme-toggle" id="theme-toggle" type="button" aria-pressed="false">
@@ -733,6 +762,40 @@ $absenceStatusLabels = [
                 <?= $user['rol'] === 'admin' ? 'Panel de Administración' : 'Registra el inicio y el fin de tu jornada.' ?>
             </p>
         </header>
+
+        <section class="card seccion-panel" id="calendar" aria-labelledby="calendar-title">
+            <h2 id="calendar-title">Calendario compartido</h2>
+            <?php if ($flash !== null && str_starts_with($statusParam, 'calendar_')): ?>
+                <p class="status" data-state="<?= htmlspecialchars($flash['state'], ENT_QUOTES, 'UTF-8') ?>" role="status">
+                    <?= htmlspecialchars($flash['text'], ENT_QUOTES, 'UTF-8') ?>
+                </p>
+            <?php endif; ?>
+            <?php if ($user['rol'] === 'admin'): ?>
+                <form action="gestionar_calendario.php" method="post">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
+                    <div class="form-grid-three">
+                        <div class="field">
+                            <label for="evento-titulo">Título</label>
+                            <input id="evento-titulo" name="titulo" type="text" maxlength="160" required>
+                        </div>
+                        <div class="field">
+                            <label for="evento-fecha">Fecha</label>
+                            <input id="evento-fecha" name="fecha" type="date" required>
+                        </div>
+                        <div class="field">
+                            <label for="evento-tipo">Tipo</label>
+                            <select id="evento-tipo" name="tipo" required>
+                                <option value="evento">Evento</option>
+                                <option value="festivo">Festivo</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-actions"><button class="submit-button" type="submit">Añadir al calendario</button></div>
+                </form>
+            <?php endif; ?>
+            <p class="status" id="calendar-status" role="status" aria-live="polite"></p>
+            <div class="calendar-container" id="shared-calendar" aria-label="Calendario de eventos y festivos"></div>
+        </section>
 
         <?php if ($user['rol'] === 'admin'): ?>
             <section class="card seccion-panel activo" id="dashboard" aria-labelledby="dashboard-title">
@@ -824,11 +887,12 @@ $absenceStatusLabels = [
                                     <th scope="col">Dirección</th>
                                     <th scope="col">Correo</th>
                                     <th scope="col">Rol</th>
+                                    <th scope="col">Acciones</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <?php if ($users === []): ?>
-                                    <tr><td class="empty-row" colspan="5">No hay usuarios registrados.</td></tr>
+                                    <tr><td class="empty-row" colspan="6">No hay usuarios registrados.</td></tr>
                                 <?php else: ?>
                                     <?php foreach ($users as $registeredUser): ?>
                                         <tr>
@@ -837,6 +901,14 @@ $absenceStatusLabels = [
                                             <td><?= htmlspecialchars($registeredUser['direccion'] ?? '', ENT_QUOTES, 'UTF-8') ?: '—' ?></td>
                                             <td><?= htmlspecialchars($registeredUser['correo'], ENT_QUOTES, 'UTF-8') ?></td>
                                             <td><?= $registeredUser['rol'] === 'admin' ? 'Administrador' : 'Empleado' ?></td>
+                                            <td>
+                                                <button
+                                                    class="reset-password-button"
+                                                    type="button"
+                                                    data-reset-password="<?= (int) $registeredUser['id'] ?>"
+                                                    data-user-name="<?= htmlspecialchars($registeredUser['nombre'], ENT_QUOTES, 'UTF-8') ?>"
+                                                >Restablecer Clave</button>
+                                            </td>
                                         </tr>
                                     <?php endforeach; ?>
                                 <?php endif; ?>
@@ -847,6 +919,71 @@ $absenceStatusLabels = [
             </section>
             </div>
 
+            <section class="card seccion-panel" id="shift-templates" aria-labelledby="templates-title">
+                <h2 id="templates-title">Plantillas de Turnos</h2>
+                <?php if ($flash !== null && str_starts_with($statusParam, 'template_')): ?>
+                    <p class="status" data-state="<?= htmlspecialchars($flash['state'], ENT_QUOTES, 'UTF-8') ?>" role="status">
+                        <?= htmlspecialchars($flash['text'], ENT_QUOTES, 'UTF-8') ?>
+                    </p>
+                <?php endif; ?>
+                <form action="gestionar_plantillas_turnos.php" method="post">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
+                    <div class="form-grid-three">
+                        <div class="field">
+                            <label for="plantilla-nombre">Nombre del turno</label>
+                            <input id="plantilla-nombre" name="nombre_turno" type="text" maxlength="100" required>
+                        </div>
+                        <div class="field">
+                            <label for="plantilla-tipo">Tipo</label>
+                            <select id="plantilla-tipo" name="tipo" required>
+                                <option value="fijo">Fijo</option>
+                                <option value="rotativo">Rotativo</option>
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label for="plantilla-inicio">Hora de inicio</label>
+                            <input id="plantilla-inicio" name="hora_inicio" type="time" required>
+                        </div>
+                        <div class="field">
+                            <label for="plantilla-fin">Hora de fin</label>
+                            <input id="plantilla-fin" name="hora_fin" type="time" required>
+                        </div>
+                        <div class="field">
+                            <label for="plantilla-dias-trabajo">Días de trabajo consecutivos</label>
+                            <input id="plantilla-dias-trabajo" name="dias_trabajo" type="number" min="1" max="31" required>
+                        </div>
+                        <div class="field">
+                            <label for="plantilla-dias-descanso">Días de descanso consecutivos</label>
+                            <input id="plantilla-dias-descanso" name="dias_descanso" type="number" min="1" max="31" required>
+                        </div>
+                    </div>
+                    <div class="form-actions"><button class="submit-button" type="submit">Crear plantilla</button></div>
+                </form>
+                <?php if ($scheduleError): ?>
+                    <p class="status" data-state="error" role="alert">No se pudieron cargar las plantillas.</p>
+                <?php else: ?>
+                    <div class="table-wrap">
+                        <table>
+                            <thead><tr><th>Nombre</th><th>Tipo</th><th>Horario</th><th>Ciclo trabajo/descanso</th></tr></thead>
+                            <tbody>
+                                <?php if ($shiftTemplates === []): ?>
+                                    <tr><td class="empty-row" colspan="4">Todavía no hay plantillas de turno.</td></tr>
+                                <?php else: ?>
+                                    <?php foreach ($shiftTemplates as $template): ?>
+                                        <tr>
+                                            <td><?= htmlspecialchars($template['nombre_turno'], ENT_QUOTES, 'UTF-8') ?></td>
+                                            <td><?= $template['tipo'] === 'fijo' ? 'Fijo' : 'Rotativo' ?></td>
+                                            <td><?= htmlspecialchars(substr($template['hora_inicio'], 0, 5) . '–' . substr($template['hora_fin'], 0, 5), ENT_QUOTES, 'UTF-8') ?></td>
+                                            <td><?= (int) $template['dias_trabajo'] ?> trabajo / <?= (int) $template['dias_descanso'] ?> descanso</td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php endif; ?>
+            </section>
+
             <section class="card seccion-panel" id="schedules" aria-labelledby="schedule-title">
                 <h2 id="schedule-title">Gestión de horarios y turnos</h2>
                 <?php if ($flash !== null && str_starts_with($statusParam, 'shift_')): ?>
@@ -856,7 +993,7 @@ $absenceStatusLabels = [
                 <?php endif; ?>
                 <?php if ($scheduleError): ?>
                     <p class="status" data-state="error" role="alert">No se pudieron cargar los horarios.</p>
-                <?php elseif ($employees === [] || $shifts === []): ?>
+                <?php elseif ($employees === [] || $shiftTemplates === []): ?>
                     <p class="status">Para asignar turnos debe haber empleados y plantillas de turno activas.</p>
                 <?php else: ?>
                     <form action="gestionar_turnos.php" method="post">
@@ -873,9 +1010,9 @@ $absenceStatusLabels = [
                             <div class="field">
                                 <label for="turno-id">Turno</label>
                                 <select id="turno-id" name="turno_id" required>
-                                    <?php foreach ($shifts as $shift): ?>
-                                        <option value="<?= (int) $shift['id'] ?>">
-                                            <?= htmlspecialchars($shift['nombre'] . ' (' . substr($shift['hora_inicio'], 0, 5) . '–' . substr($shift['hora_fin'], 0, 5) . ')', ENT_QUOTES, 'UTF-8') ?>
+                                    <?php foreach ($shiftTemplates as $template): ?>
+                                        <option value="<?= (int) $template['id'] ?>">
+                                            <?= htmlspecialchars($template['nombre_turno'] . ' (' . substr($template['hora_inicio'], 0, 5) . '–' . substr($template['hora_fin'], 0, 5) . ')', ENT_QUOTES, 'UTF-8') ?>
                                         </option>
                                     <?php endforeach; ?>
                                 </select>
@@ -989,7 +1126,7 @@ $absenceStatusLabels = [
                         <?= htmlspecialchars($flash['text'], ENT_QUOTES, 'UTF-8') ?>
                     </p>
                 <?php endif; ?>
-                <h2>Registrar baja médica o retraso</h2>
+                <h2>Registrar baja médica, retraso o falta</h2>
                 <?php if ($employees !== []): ?>
                     <form action="gestionar_ausencias.php" method="post">
                         <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
@@ -1008,6 +1145,7 @@ $absenceStatusLabels = [
                                 <select id="incidencia-tipo" name="tipo" required>
                                     <option value="baja_medica">Baja médica</option>
                                     <option value="retraso">Retraso</option>
+                                    <option value="falta">Falta</option>
                                 </select>
                             </div>
                             <div class="field">

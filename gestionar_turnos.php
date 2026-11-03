@@ -47,15 +47,15 @@ if (
 }
 
 $employeeId = filter_var($_POST['usuario_id'] ?? null, FILTER_VALIDATE_INT);
-$shiftId = filter_var($_POST['turno_id'] ?? null, FILTER_VALIDATE_INT);
+$templateId = filter_var($_POST['turno_id'] ?? null, FILTER_VALIDATE_INT);
 $startDate = $_POST['fecha_inicio'] ?? null;
 $endDate = $_POST['fecha_fin'] ?? '';
 
 if (
     $employeeId === false
     || $employeeId < 1
-    || $shiftId === false
-    || $shiftId < 1
+    || $templateId === false
+    || $templateId < 1
     || !is_string($startDate)
     || !is_string($endDate)
     || !isValidDate($startDate)
@@ -79,10 +79,14 @@ try {
     }
 
     $shiftQuery = $connection->prepare(
-        'SELECT id FROM turnos WHERE id = :id AND activo = TRUE'
+        'SELECT turnos.id
+         FROM plantillas_turnos
+         JOIN turnos ON turnos.id = plantillas_turnos.turno_id
+         WHERE plantillas_turnos.id = :id AND turnos.activo = TRUE'
     );
-    $shiftQuery->execute(['id' => $shiftId]);
-    if ($shiftQuery->fetchColumn() === false) {
+    $shiftQuery->execute(['id' => $templateId]);
+    $shiftId = $shiftQuery->fetchColumn();
+    if ($shiftId === false) {
         $connection->rollBack();
         redirectToSchedule('shift_invalid');
     }

@@ -126,6 +126,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         input:focus-visible { outline: 3px solid #b5caff; border-color: #3156c9; }
 
+        .password-field {
+            position: relative;
+            display: block;
+        }
+        .password-field input { padding-right: 52px; }
+        .password-toggle {
+            position: absolute;
+            top: 50%;
+            right: 6px;
+            display: grid;
+            width: 40px;
+            min-height: 38px;
+            margin: 0;
+            padding: 8px;
+            transform: translateY(-50%);
+            place-items: center;
+            border: 0;
+            border-radius: 7px;
+            background: transparent;
+            color: #64718a;
+            cursor: pointer;
+        }
+        .password-toggle:hover { transform: translateY(-50%); background: #edf2ff; }
+        .password-toggle:focus-visible { outline: 3px solid #91b4ff; outline-offset: 1px; }
+        .password-toggle svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+        .password-toggle .eye-slash { display: none; }
+        .password-toggle[aria-pressed="true"] .eye-slash { display: block; }
+        .password-toggle[aria-pressed="true"] .eye-open { display: none; }
+
         button {
             width: 100%;
             min-height: 48px;
@@ -171,13 +200,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             >
 
             <label for="password">Contraseña</label>
-            <input
-                id="password"
-                name="password"
-                type="password"
-                autocomplete="current-password"
-                required
-            >
+            <span class="password-field">
+                <input
+                    id="password"
+                    name="password"
+                    type="password"
+                    autocomplete="current-password"
+                    required
+                >
+                <button
+                    class="password-toggle"
+                    id="password-toggle"
+                    type="button"
+                    aria-label="Mostrar contraseña"
+                    aria-pressed="false"
+                    aria-controls="password"
+                >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path class="eye-open" d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"></path>
+                        <circle class="eye-open" cx="12" cy="12" r="3"></circle>
+                        <path class="eye-slash" d="M3 3l18 18M10.6 5.2A10.7 10.7 0 0 1 12 5c6.4 0 10 7 10 7a16 16 0 0 1-3.2 4.1M6.2 6.2C3.5 8 2 12 2 12s3.6 7 10 7a10.5 10.5 0 0 0 4.2-.9"></path>
+                        <path class="eye-slash" d="M9.9 9.9a3 3 0 0 0 4.2 4.2"></path>
+                    </svg>
+                </button>
+            </span>
 
             <button type="submit">Entrar</button>
         </form>
@@ -188,5 +234,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </p>
         <?php endif; ?>
     </main>
+    <script>
+        const passwordInput = document.querySelector("#password");
+        const passwordToggle = document.querySelector("#password-toggle");
+
+        passwordToggle.addEventListener("click", () => {
+            const isVisible = passwordInput.type === "text";
+            passwordInput.type = isVisible ? "password" : "text";
+            passwordToggle.setAttribute("aria-pressed", String(!isVisible));
+            passwordToggle.setAttribute(
+                "aria-label",
+                isVisible ? "Mostrar contraseña" : "Ocultar contraseña"
+            );
+        });
+    </script>
 </body>
 </html>

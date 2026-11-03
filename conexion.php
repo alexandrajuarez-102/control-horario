@@ -16,9 +16,12 @@ function getDatabaseConnection(): PDO
         $database
     );
 
-    return new PDO($dsn, $username, $password === false ? '' : $password, [
+    $connection = new PDO($dsn, $username, $password === false ? '' : $password, [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
         PDO::ATTR_EMULATE_PREPARES => false,
     ]);
+    $connection->exec('SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci');
+
+    return $connection;
 }

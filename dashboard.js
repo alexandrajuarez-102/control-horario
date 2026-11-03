@@ -67,6 +67,57 @@ document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeSidebar();
 });
 
+document.addEventListener("click", async (event) => {
+    const button = event.target instanceof Element
+        ? event.target.closest("[data-reset-password]")
+        : null;
+    if (!button) return;
+
+    const userName = button.dataset.userName || "este usuario";
+    const password = window.prompt(`Introduce la nueva contraseña para ${userName} (mínimo 7 caracteres):`);
+    if (password === null) return;
+    if (password.length < 7 || new TextEncoder().encode(password).length > 4096) {
+        window.alert("La contraseña debe tener al menos 7 caracteres y no superar 4096 bytes.");
+        return;
+    }
+
+    const confirmation = window.prompt("Confirma la nueva contraseña:");
+    if (confirmation === null) return;
+    if (confirmation !== password) {
+        window.alert("Las contraseñas no coinciden.");
+        return;
+    }
+
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+    if (!csrfToken) {
+        window.alert("No se pudo validar la sesión. Recarga la página e inténtalo de nuevo.");
+        return;
+    }
+
+    button.disabled = true;
+    try {
+        const response = await fetch("restablecer_clave.php", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+            body: new URLSearchParams({
+                csrf_token: csrfToken,
+                usuario_id: button.dataset.resetPassword,
+                password
+            })
+        });
+        const result = await response.json();
+        if (!response.ok) {
+            throw new Error(result.error || "No se pudo restablecer la contraseña.");
+        }
+        window.alert(`Contraseña restablecida para ${userName}.`);
+    } catch (error) {
+        console.error("No se pudo restablecer la contraseña:", error);
+        window.alert(error instanceof Error ? error.message : "No se pudo restablecer la contraseña.");
+    } finally {
+        button.disabled = false;
+    }
+});
+
 const panelLinks = [...(sidebar?.querySelectorAll('a[href^="#"]') ?? [])];
 const panels = [...document.querySelectorAll(".seccion-panel")];
 const firstPanelId = panelLinks
@@ -84,6 +135,9 @@ function showPanel(panelId, updateHistory = false) {
         panel.classList.toggle("activo", isSelected);
         panel.setAttribute("aria-hidden", String(!isSelected));
     });
+    document.dispatchEvent(new CustomEvent("control-horario-panel-change", {
+        detail: { panelId }
+    }));
 
     panelLinks.forEach((link) => {
         const isSelected = link.getAttribute("href") === `#${panelId}`;

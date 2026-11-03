@@ -94,12 +94,37 @@ tratamiento antes de habilitarlo en un entorno real.
 
 El panel admin incluye plantillas de turno fijas y rotativas (5x2, 4x2 y 6x3),
 asignaciones por vigencia sin solapamientos, revisión de solicitudes de ausencia
-y registro manual de bajas médicas y retrasos. Los empleados pueden solicitar
+y registro manual de bajas médicas, retrasos y faltas. Los empleados pueden solicitar
 vacaciones, citas médicas o asuntos familiares y consultar el estado. Las horas
 trabajadas se calculan al fichar salida, descontando pausas; cualquier tiempo
 por encima de ocho horas se almacena como horas extra. Esta regla es un umbral
 configurable de prototipo y no determina por sí sola el tratamiento laboral o
 retributivo de las horas extra.
+
+Administración permite crear plantillas fijas o rotativas con horarios y ciclos
+personalizados; las asignaciones siguen vinculadas a la tabla de turnos existente
+para conservar las asignaciones previas. La pestaña Calendario muestra eventos y
+festivos compartidos, y solo administración puede añadirlos. FullCalendar se
+carga desde CDN, por lo que su interfaz requiere conexión a Internet.
+
+En una base Docker ya creada, aplica primero el esquema adicional y, si quieres
+cargar datos ficticios, importa `datos_prueba.sql` desde la carpeta del proyecto:
+
+```powershell
+docker compose cp migracion_funcionalidades.sql db:/tmp/migracion-funcionalidades.sql
+docker compose exec -T db sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" < /tmp/migracion-funcionalidades.sql && rm /tmp/migracion-funcionalidades.sql'
+docker compose cp datos_prueba.sql db:/tmp/datos-prueba.sql
+docker compose exec -T db sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" < /tmp/datos-prueba.sql && rm /tmp/datos-prueba.sql'
+docker compose up --build --detach
+```
+
+La migración conserva usuarios, fichajes y asignaciones, y sincroniza las
+plantillas iniciales desde los turnos existentes. El SQL de demostración se
+puede volver a ejecutar sin volver a crear sus usuarios, asignaciones o
+ausencias; requiere que ya exista un administrador y no crea ni actualiza
+ninguna cuenta de administración. Los nombres, correos bajo `example.test`,
+documentos y direcciones son ficticios. Las contraseñas de las cuentas de prueba
+no se proporcionan.
 
 El panel administrativo incorpora navegación lateral adaptable a móvil, un
 conmutador de tema claro/oscuro cuya preferencia se guarda en el navegador, y
