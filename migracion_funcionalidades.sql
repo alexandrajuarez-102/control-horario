@@ -18,6 +18,21 @@ CREATE TABLE IF NOT EXISTS plantillas_turnos (
     CONSTRAINT chk_plantillas_turnos_ciclo CHECK (dias_trabajo > 0 AND dias_descanso > 0)
 ) ENGINE=InnoDB;
 
+SET @migration_sql = IF(
+    (
+        SELECT COUNT(*)
+        FROM information_schema.columns
+        WHERE table_schema = DATABASE()
+          AND table_name = 'plantillas_turnos'
+          AND column_name = 'horas_descanso'
+    ) = 0,
+    'ALTER TABLE plantillas_turnos ADD COLUMN horas_descanso DECIMAL(4,2) NOT NULL DEFAULT 0.00 AFTER dias_descanso',
+    'SELECT 1'
+);
+PREPARE migration_statement FROM @migration_sql;
+EXECUTE migration_statement;
+DEALLOCATE PREPARE migration_statement;
+
 INSERT INTO plantillas_turnos
     (nombre_turno, tipo, hora_inicio, hora_fin, dias_trabajo, dias_descanso, turno_id)
 SELECT turnos.nombre, turnos.tipo, turnos.hora_inicio, turnos.hora_fin,

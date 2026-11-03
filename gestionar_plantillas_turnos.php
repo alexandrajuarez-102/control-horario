@@ -48,6 +48,7 @@ $startTime = $_POST['hora_inicio'] ?? null;
 $endTime = $_POST['hora_fin'] ?? null;
 $workDays = filter_var($_POST['dias_trabajo'] ?? null, FILTER_VALIDATE_INT);
 $restDays = filter_var($_POST['dias_descanso'] ?? null, FILTER_VALIDATE_INT);
+$breakHours = $_POST['horas_descanso'] ?? null;
 $validTime = static fn ($value): bool => is_string($value)
     && preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/', $value) === 1;
 
@@ -64,6 +65,10 @@ if (
     || $restDays === false
     || $restDays < 1
     || $restDays > 31
+    || !is_string($breakHours)
+    || preg_match('/^(?:\d{1,2})(?:\.\d{1,2})?$/', $breakHours) !== 1
+    || (float) $breakHours < 0
+    || (float) $breakHours > 24
 ) {
     redirectToTemplates('template_invalid');
 }
@@ -88,9 +93,9 @@ try {
 
     $insertTemplate = $connection->prepare(
         'INSERT INTO plantillas_turnos
-            (nombre_turno, tipo, hora_inicio, hora_fin, dias_trabajo, dias_descanso, turno_id)
+            (nombre_turno, tipo, hora_inicio, hora_fin, dias_trabajo, dias_descanso, horas_descanso, turno_id)
          VALUES
-            (:nombre_turno, :tipo, :hora_inicio, :hora_fin, :dias_trabajo, :dias_descanso, :turno_id)'
+            (:nombre_turno, :tipo, :hora_inicio, :hora_fin, :dias_trabajo, :dias_descanso, :horas_descanso, :turno_id)'
     );
     $insertTemplate->execute([
         'nombre_turno' => $name,
@@ -99,6 +104,7 @@ try {
         'hora_fin' => $endTime . ':00',
         'dias_trabajo' => $workDays,
         'dias_descanso' => $restDays,
+        'horas_descanso' => number_format((float) $breakHours, 2, '.', ''),
         'turno_id' => $connection->lastInsertId(),
     ]);
     $connection->commit();

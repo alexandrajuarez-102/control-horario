@@ -177,6 +177,83 @@ window.addEventListener("popstate", () => {
     }
 });
 
+const scheduleEditDialog = document.querySelector("#schedule-edit-dialog");
+const scheduleEditForm = document.querySelector("#schedule-edit-form");
+const editAssignmentId = document.querySelector("#edit-assignment-id");
+const editAssignmentEmployee = document.querySelector("#edit-assignment-employee");
+const editAssignmentTemplate = document.querySelector("#edit-assignment-template");
+const editAssignmentStart = document.querySelector("#edit-assignment-start");
+const editAssignmentEnd = document.querySelector("#edit-assignment-end");
+const editAssignmentBreak = document.querySelector("#edit-assignment-break");
+
+document.addEventListener("click", (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    const editButton = target?.closest("[data-edit-assignment]");
+    if (editButton && scheduleEditDialog instanceof HTMLDialogElement) {
+        if (
+            !(editAssignmentId instanceof HTMLInputElement)
+            || !(editAssignmentEmployee instanceof HTMLSelectElement)
+            || !(editAssignmentTemplate instanceof HTMLSelectElement)
+            || !(editAssignmentStart instanceof HTMLInputElement)
+            || !(editAssignmentEnd instanceof HTMLInputElement)
+            || !(editAssignmentBreak instanceof HTMLInputElement)
+        ) {
+            console.error("No se pudo preparar el formulario para editar el turno.");
+            return;
+        }
+
+        editAssignmentId.value = editButton.dataset.editAssignment || "";
+        editAssignmentEmployee.value = editButton.dataset.employeeId || "";
+        editAssignmentTemplate.value = editButton.dataset.templateId || "";
+        editAssignmentStart.value = editButton.dataset.startDate || "";
+        editAssignmentEnd.value = editButton.dataset.endDate || "";
+        editAssignmentBreak.value = editButton.dataset.breakHours || "0";
+        scheduleEditDialog.showModal();
+        return;
+    }
+
+    if (target?.closest("[data-close-schedule-edit]") && scheduleEditDialog instanceof HTMLDialogElement) {
+        scheduleEditDialog.close();
+    }
+});
+
+editAssignmentTemplate?.addEventListener("change", () => {
+    if (!(editAssignmentTemplate instanceof HTMLSelectElement) || !(editAssignmentBreak instanceof HTMLInputElement)) {
+        return;
+    }
+    const selectedOption = editAssignmentTemplate.selectedOptions[0];
+    if (selectedOption?.dataset.breakHours !== undefined) {
+        editAssignmentBreak.value = selectedOption.dataset.breakHours;
+    }
+});
+
+scheduleEditDialog?.addEventListener("click", (event) => {
+    if (
+        event.target === scheduleEditDialog
+        && scheduleEditDialog instanceof HTMLDialogElement
+    ) {
+        scheduleEditDialog.close();
+    }
+});
+
+scheduleEditForm?.addEventListener("submit", (event) => {
+    if (
+        !(editAssignmentStart instanceof HTMLInputElement)
+        || !(editAssignmentEnd instanceof HTMLInputElement)
+        || !(editAssignmentBreak instanceof HTMLInputElement)
+    ) {
+        return;
+    }
+
+    const startDate = editAssignmentStart.value;
+    const endDate = editAssignmentEnd.value;
+    const breakHours = Number(editAssignmentBreak.value);
+    if ((endDate && endDate < startDate) || !Number.isFinite(breakHours) || breakHours < 0 || breakHours > 24) {
+        event.preventDefault();
+        window.alert("Comprueba las fechas y que las horas de pausa estén entre 0 y 24.");
+    }
+});
+
 const dashboardDataElement = document.querySelector("#dashboard-data");
 const workedCanvas = document.querySelector("#work-hours-chart");
 const staffCanvas = document.querySelector("#staff-status-chart");

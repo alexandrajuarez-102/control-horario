@@ -168,6 +168,7 @@ CREATE TABLE IF NOT EXISTS plantillas_turnos (
     hora_fin TIME NOT NULL,
     dias_trabajo TINYINT UNSIGNED NOT NULL,
     dias_descanso TINYINT UNSIGNED NOT NULL,
+    horas_descanso DECIMAL(4,2) NOT NULL DEFAULT 0.00,
     turno_id BIGINT UNSIGNED NOT NULL,
     PRIMARY KEY (id),
     UNIQUE KEY uq_plantillas_turnos_nombre (nombre_turno),

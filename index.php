@@ -22,8 +22,10 @@ $flashMessages = [
     'duplicate' => ['state' => 'error', 'text' => 'Ya existe un usuario con ese correo o DNI.'],
     'error' => ['state' => 'error', 'text' => 'No se pudo crear el usuario. Inténtalo más tarde.'],
     'shift_created' => ['state' => 'success', 'text' => 'Turno asignado correctamente.'],
+    'shift_deleted' => ['state' => 'success', 'text' => 'Asignación de turno eliminada correctamente.'],
+    'shift_updated' => ['state' => 'success', 'text' => 'Asignación de turno actualizada correctamente.'],
     'shift_invalid' => ['state' => 'error', 'text' => 'Los datos del turno no son válidos o se solapan con otra asignación.'],
-    'shift_error' => ['state' => 'error', 'text' => 'No se pudo asignar el turno. Inténtalo más tarde.'],
+    'shift_error' => ['state' => 'error', 'text' => 'No se pudo guardar la asignación del turno. Inténtalo más tarde.'],
     'template_created' => ['state' => 'success', 'text' => 'Plantilla de turno creada correctamente.'],
     'template_invalid' => ['state' => 'error', 'text' => 'Revisa el nombre, el horario y los días del ciclo.'],
     'template_duplicate' => ['state' => 'error', 'text' => 'Ya existe una plantilla o turno con ese nombre.'],
@@ -105,20 +107,23 @@ if ($user['rol'] === 'admin') {
         $employees = $statement->fetchAll();
 
         $statement = $connection->query(
-            'SELECT id, nombre_turno, tipo, hora_inicio, hora_fin, dias_trabajo, dias_descanso
+            'SELECT id, nombre_turno, tipo, hora_inicio, hora_fin, dias_trabajo, dias_descanso, horas_descanso
              FROM plantillas_turnos
              ORDER BY nombre_turno ASC'
         );
         $shiftTemplates = $statement->fetchAll();
 
         $statement = $connection->query(
-            'SELECT asignaciones_turno.id, usuarios.nombre AS empleado, turnos.nombre AS turno,
+            'SELECT asignaciones_turno.id, asignaciones_turno.usuario_id, asignaciones_turno.turno_id,
+                    plantillas_turnos.id AS plantilla_id, plantillas_turnos.horas_descanso,
+                    usuarios.nombre AS empleado, turnos.nombre AS turno,
                     turnos.tipo, turnos.hora_inicio, turnos.hora_fin,
                     turnos.dias_trabajo, turnos.dias_descanso,
                     asignaciones_turno.fecha_inicio, asignaciones_turno.fecha_fin
              FROM asignaciones_turno
              JOIN usuarios ON usuarios.id = asignaciones_turno.usuario_id
              JOIN turnos ON turnos.id = asignaciones_turno.turno_id
+             JOIN plantillas_turnos ON plantillas_turnos.turno_id = turnos.id
              ORDER BY asignaciones_turno.fecha_inicio DESC, asignaciones_turno.id DESC'
         );
         $shiftAssignments = $statement->fetchAll();
@@ -571,6 +576,29 @@ $absenceStatusLabels = [
         .approve-button { min-height: 38px; padding: 0 12px; background: #147d58; }
         .reject-button { min-height: 38px; padding: 0 12px; background: #b42318; }
         .reset-password-button { min-height: 38px; padding: 0 12px; background: #3156c9; }
+        .edit-assignment-button { min-height: 38px; margin-right: 6px; padding: 0 12px; background: #3156c9; }
+        .profile-button { min-height: 38px; margin-right: 6px; padding: 0 12px; background: #147d58; }
+        .profile-dialog, .schedule-edit-dialog {
+            width: min(900px, calc(100% - 24px));
+            max-height: min(90vh, 900px);
+            overflow-y: auto;
+            padding: clamp(20px, 4vw, 36px);
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            background: var(--surface);
+            color: var(--text);
+        }
+        .profile-dialog::backdrop, .schedule-edit-dialog::backdrop { background: rgb(10 18 32 / 65%); }
+        .profile-dialog-header, .schedule-edit-dialog-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+        .profile-dialog-header h2 { margin: 0; }
+        .profile-close-button { min-height: 38px; padding: 0 12px; background: #64718a; }
+        .profile-dialog .actions { margin-top: 16px; }
         .export-button {
             display: inline-flex;
             align-items: center;
@@ -690,6 +718,7 @@ $absenceStatusLabels = [
         })();
     </script>
     <script src="dashboard.js" defer></script>
+    <script src="profile.js" defer></script>
     <script src="calendar.js" defer></script>
 </head>
 <body>
@@ -895,13 +924,20 @@ $absenceStatusLabels = [
                                     <tr><td class="empty-row" colspan="6">No hay usuarios registrados.</td></tr>
                                 <?php else: ?>
                                     <?php foreach ($users as $registeredUser): ?>
-                                        <tr>
-                                            <td><?= htmlspecialchars($registeredUser['nombre'], ENT_QUOTES, 'UTF-8') ?></td>
-                                            <td><?= htmlspecialchars($registeredUser['dni'] ?? '', ENT_QUOTES, 'UTF-8') ?: '—' ?></td>
-                                            <td><?= htmlspecialchars($registeredUser['direccion'] ?? '', ENT_QUOTES, 'UTF-8') ?: '—' ?></td>
-                                            <td><?= htmlspecialchars($registeredUser['correo'], ENT_QUOTES, 'UTF-8') ?></td>
+                                        <tr data-user-row="<?= (int) $registeredUser['id'] ?>">
+                                            <td data-profile-name><?= htmlspecialchars($registeredUser['nombre'], ENT_QUOTES, 'UTF-8') ?></td>
+                                            <td data-profile-dni><?= htmlspecialchars($registeredUser['dni'] ?? '', ENT_QUOTES, 'UTF-8') ?: '—' ?></td>
+                                            <td data-profile-address><?= htmlspecialchars($registeredUser['direccion'] ?? '', ENT_QUOTES, 'UTF-8') ?: '—' ?></td>
+                                            <td data-profile-email><?= htmlspecialchars($registeredUser['correo'], ENT_QUOTES, 'UTF-8') ?></td>
                                             <td><?= $registeredUser['rol'] === 'admin' ? 'Administrador' : 'Empleado' ?></td>
                                             <td>
+                                                <?php if ($registeredUser['rol'] === 'empleado'): ?>
+                                                    <button
+                                                        class="profile-button"
+                                                        type="button"
+                                                        data-view-profile="<?= (int) $registeredUser['id'] ?>"
+                                                    >Ver Perfil</button>
+                                                <?php endif; ?>
                                                 <button
                                                     class="reset-password-button"
                                                     type="button"
@@ -917,6 +953,55 @@ $absenceStatusLabels = [
                     </div>
                 <?php endif; ?>
             </section>
+            <dialog class="profile-dialog" id="profile-dialog" aria-labelledby="profile-title">
+                <div class="profile-dialog-header">
+                    <h2 id="profile-title">Perfil del trabajador</h2>
+                    <button class="profile-close-button" type="button" data-close-profile>Cerrar</button>
+                </div>
+                <p class="status" id="profile-status" role="status" aria-live="polite"></p>
+                <form id="profile-form">
+                    <input type="hidden" name="usuario_id" id="profile-user-id">
+                    <div class="form-grid">
+                        <div class="field">
+                            <label for="profile-name">Nombre</label>
+                            <input id="profile-name" name="nombre" maxlength="150" required>
+                        </div>
+                        <div class="field">
+                            <label for="profile-dni">DNI</label>
+                            <input id="profile-dni" name="dni" maxlength="20">
+                        </div>
+                        <div class="field">
+                            <label for="profile-address">Dirección</label>
+                            <input id="profile-address" name="direccion" maxlength="255">
+                        </div>
+                        <div class="field">
+                            <label for="profile-email">Correo electrónico</label>
+                            <input id="profile-email" name="correo" type="email" maxlength="254" required>
+                        </div>
+                    </div>
+                    <div class="actions">
+                        <button class="submit-button" type="submit" id="profile-save">Guardar cambios</button>
+                    </div>
+                </form>
+                <section aria-labelledby="profile-attendance-title">
+                    <h2 id="profile-attendance-title">Historial de fichajes</h2>
+                    <div class="field">
+                        <label for="profile-month">Mes</label>
+                        <input id="profile-month" type="month" required>
+                    </div>
+                    <p class="status" id="profile-history-status" role="status" aria-live="polite"></p>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr><th>Fecha</th><th>Tipo</th><th>Hora</th><th>Horas trabajadas</th><th>Horas extra</th></tr>
+                            </thead>
+                            <tbody id="profile-attendance-body">
+                                <tr><td class="empty-row" colspan="5">Selecciona un perfil para cargar fichajes.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            </dialog>
             </div>
 
             <section class="card seccion-panel" id="shift-templates" aria-labelledby="templates-title">
@@ -956,6 +1041,10 @@ $absenceStatusLabels = [
                             <label for="plantilla-dias-descanso">Días de descanso consecutivos</label>
                             <input id="plantilla-dias-descanso" name="dias_descanso" type="number" min="1" max="31" required>
                         </div>
+                        <div class="field">
+                            <label for="plantilla-horas-descanso">Horas de pausa</label>
+                            <input id="plantilla-horas-descanso" name="horas_descanso" type="number" min="0" max="24" step="0.25" value="0" required>
+                        </div>
                     </div>
                     <div class="form-actions"><button class="submit-button" type="submit">Crear plantilla</button></div>
                 </form>
@@ -964,10 +1053,10 @@ $absenceStatusLabels = [
                 <?php else: ?>
                     <div class="table-wrap">
                         <table>
-                            <thead><tr><th>Nombre</th><th>Tipo</th><th>Horario</th><th>Ciclo trabajo/descanso</th></tr></thead>
+                            <thead><tr><th>Nombre</th><th>Tipo</th><th>Horario</th><th>Ciclo trabajo/descanso</th><th>Pausa</th></tr></thead>
                             <tbody>
                                 <?php if ($shiftTemplates === []): ?>
-                                    <tr><td class="empty-row" colspan="4">Todavía no hay plantillas de turno.</td></tr>
+                                    <tr><td class="empty-row" colspan="5">Todavía no hay plantillas de turno.</td></tr>
                                 <?php else: ?>
                                     <?php foreach ($shiftTemplates as $template): ?>
                                         <tr>
@@ -975,6 +1064,7 @@ $absenceStatusLabels = [
                                             <td><?= $template['tipo'] === 'fijo' ? 'Fijo' : 'Rotativo' ?></td>
                                             <td><?= htmlspecialchars(substr($template['hora_inicio'], 0, 5) . '–' . substr($template['hora_fin'], 0, 5), ENT_QUOTES, 'UTF-8') ?></td>
                                             <td><?= (int) $template['dias_trabajo'] ?> trabajo / <?= (int) $template['dias_descanso'] ?> descanso</td>
+                                            <td><?= htmlspecialchars(rtrim(rtrim(number_format((float) $template['horas_descanso'], 2, '.', ''), '0'), '.'), ENT_QUOTES, 'UTF-8') ?> h</td>
                                         </tr>
                                     <?php endforeach; ?>
                                 <?php endif; ?>
@@ -1011,7 +1101,10 @@ $absenceStatusLabels = [
                                 <label for="turno-id">Turno</label>
                                 <select id="turno-id" name="turno_id" required>
                                     <?php foreach ($shiftTemplates as $template): ?>
-                                        <option value="<?= (int) $template['id'] ?>">
+                                        <option
+                                            value="<?= (int) $template['id'] ?>"
+                                            data-break-hours="<?= htmlspecialchars(number_format((float) $template['horas_descanso'], 2, '.', ''), ENT_QUOTES, 'UTF-8') ?>"
+                                        >
                                             <?= htmlspecialchars($template['nombre_turno'] . ' (' . substr($template['hora_inicio'], 0, 5) . '–' . substr($template['hora_fin'], 0, 5) . ')', ENT_QUOTES, 'UTF-8') ?>
                                         </option>
                                     <?php endforeach; ?>
@@ -1035,11 +1128,11 @@ $absenceStatusLabels = [
                     <div class="table-wrap">
                         <table>
                             <thead>
-                                <tr><th>Empleado</th><th>Turno</th><th>Tipo</th><th>Horario</th><th>Ciclo trabajo/descanso</th><th>Vigencia</th></tr>
+                                <tr><th>Empleado</th><th>Turno</th><th>Tipo</th><th>Horario</th><th>Ciclo trabajo/descanso</th><th>Vigencia</th><th>Acciones</th></tr>
                             </thead>
                             <tbody>
                                 <?php if ($shiftAssignments === []): ?>
-                                    <tr><td class="empty-row" colspan="6">Todavía no hay turnos asignados.</td></tr>
+                                    <tr><td class="empty-row" colspan="7">Todavía no hay turnos asignados.</td></tr>
                                 <?php else: ?>
                                     <?php foreach ($shiftAssignments as $assignment): ?>
                                         <tr>
@@ -1047,8 +1140,29 @@ $absenceStatusLabels = [
                                             <td><?= htmlspecialchars($assignment['turno'], ENT_QUOTES, 'UTF-8') ?></td>
                                             <td><?= $assignment['tipo'] === 'fijo' ? 'Fijo' : 'Rotativo' ?></td>
                                             <td><?= htmlspecialchars(substr($assignment['hora_inicio'], 0, 5) . '–' . substr($assignment['hora_fin'], 0, 5), ENT_QUOTES, 'UTF-8') ?></td>
-                                            <td><?= (int) $assignment['dias_trabajo'] ?> trabajo / <?= (int) $assignment['dias_descanso'] ?> descanso</td>
+                                            <td>
+                                                <?= (int) $assignment['dias_trabajo'] ?> trabajo / <?= (int) $assignment['dias_descanso'] ?> descanso
+                                                · <?= htmlspecialchars(rtrim(rtrim(number_format((float) $assignment['horas_descanso'], 2, '.', ''), '0'), '.'), ENT_QUOTES, 'UTF-8') ?> h de pausa
+                                            </td>
                                             <td><?= htmlspecialchars($assignment['fecha_inicio'] . ' – ' . ($assignment['fecha_fin'] ?? 'sin fecha de fin'), ENT_QUOTES, 'UTF-8') ?></td>
+                                            <td>
+                                                <button
+                                                    class="edit-assignment-button"
+                                                    type="button"
+                                                    data-edit-assignment="<?= (int) $assignment['id'] ?>"
+                                                    data-employee-id="<?= (int) $assignment['usuario_id'] ?>"
+                                                    data-template-id="<?= (int) $assignment['plantilla_id'] ?>"
+                                                    data-start-date="<?= htmlspecialchars($assignment['fecha_inicio'], ENT_QUOTES, 'UTF-8') ?>"
+                                                    data-end-date="<?= htmlspecialchars($assignment['fecha_fin'] ?? '', ENT_QUOTES, 'UTF-8') ?>"
+                                                    data-break-hours="<?= htmlspecialchars(number_format((float) $assignment['horas_descanso'], 2, '.', ''), ENT_QUOTES, 'UTF-8') ?>"
+                                                >Editar</button>
+                                                <form action="gestionar_turnos.php" method="post" onsubmit="return confirm('¿Eliminar esta asignación de turno? El usuario y sus fichajes no se modificarán.');">
+                                                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
+                                                    <input type="hidden" name="action" value="delete">
+                                                    <input type="hidden" name="asignacion_id" value="<?= (int) $assignment['id'] ?>">
+                                                    <button class="reject-button" type="submit">Eliminar</button>
+                                                </form>
+                                            </td>
                                         </tr>
                                     <?php endforeach; ?>
                                 <?php endif; ?>
@@ -1056,6 +1170,56 @@ $absenceStatusLabels = [
                         </table>
                     </div>
                 <?php endif; ?>
+                <dialog class="schedule-edit-dialog" id="schedule-edit-dialog" aria-labelledby="schedule-edit-title">
+                    <div class="schedule-edit-dialog-header">
+                        <h2 id="schedule-edit-title">Editar asignación de turno</h2>
+                        <button class="profile-close-button" type="button" data-close-schedule-edit>Cerrar</button>
+                    </div>
+                    <form action="gestionar_turnos.php" method="post" id="schedule-edit-form">
+                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
+                        <input type="hidden" name="action" value="update">
+                        <input type="hidden" name="asignacion_id" id="edit-assignment-id">
+                        <div class="form-grid">
+                            <div class="field">
+                                <label for="edit-assignment-employee">Empleado</label>
+                                <select id="edit-assignment-employee" name="usuario_id" required>
+                                    <?php foreach ($employees as $employee): ?>
+                                        <option value="<?= (int) $employee['id'] ?>"><?= htmlspecialchars($employee['nombre'], ENT_QUOTES, 'UTF-8') ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="field">
+                                <label for="edit-assignment-template">Turno</label>
+                                <select id="edit-assignment-template" name="turno_id" required>
+                                    <?php foreach ($shiftTemplates as $template): ?>
+                                        <option
+                                            value="<?= (int) $template['id'] ?>"
+                                            data-break-hours="<?= htmlspecialchars(number_format((float) $template['horas_descanso'], 2, '.', ''), ENT_QUOTES, 'UTF-8') ?>"
+                                        >
+                                            <?= htmlspecialchars($template['nombre_turno'] . ' (' . substr($template['hora_inicio'], 0, 5) . '–' . substr($template['hora_fin'], 0, 5) . ')', ENT_QUOTES, 'UTF-8') ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="field">
+                                <label for="edit-assignment-start">Fecha de inicio</label>
+                                <input id="edit-assignment-start" name="fecha_inicio" type="date" required>
+                            </div>
+                            <div class="field">
+                                <label for="edit-assignment-end">Fecha de fin (opcional)</label>
+                                <input id="edit-assignment-end" name="fecha_fin" type="date">
+                            </div>
+                            <div class="field">
+                                <label for="edit-assignment-break">Horas de pausa del turno</label>
+                                <input id="edit-assignment-break" name="horas_descanso" type="number" min="0" max="24" step="0.25" required>
+                            </div>
+                        </div>
+                        <p class="status">Las horas de pausa pertenecen a la plantilla seleccionada, por lo que también se actualizan para otras asignaciones de ese mismo turno.</p>
+                        <div class="form-actions">
+                            <button class="submit-button" type="submit">Guardar cambios</button>
+                        </div>
+                    </form>
+                </dialog>
             </section>
 
             <section class="card seccion-panel" id="attendance-history" aria-labelledby="attendance-history-title">
