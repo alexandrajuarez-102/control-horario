@@ -52,4 +52,10 @@ CREATE TABLE IF NOT EXISTS calendario_eventos (
 ) ENGINE=InnoDB;
 
 ALTER TABLE ausencias
-    MODIFY tipo ENUM('vacaciones', 'medico', 'asuntos_familiares', 'baja_medica', 'retraso', 'falta') NOT NULL;
+    MODIFY tipo ENUM(
+        'vacaciones', 'medico', 'asuntos_familiares', 'fallecimiento_familiar',
+        'hospitalizacion_familiar', 'deber_inexcusable', 'mudanza', 'matrimonio',
+        'nacimiento_cuidado', 'lactancia', 'fuerza_mayor_familiar',
+        'permiso_retribuido', 'permiso_no_retribuido', 'otros',
+        'baja_medica', 'retraso', 'falta'
+    ) NOT NULL;

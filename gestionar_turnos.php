@@ -6,6 +6,22 @@ startSecureSession();
 
 function redirectToSchedule(string $status): void
 {
+    if (($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'XMLHttpRequest') {
+        $messages = [
+            'shift_updated' => 'Asignación de turno actualizada correctamente.',
+            'shift_invalid' => 'Los datos del turno no son válidos o se solapan con otra asignación.',
+            'shift_error' => 'No se pudo guardar la asignación del turno. Inténtalo más tarde.',
+        ];
+        $success = $status === 'shift_updated';
+        http_response_code($success ? 200 : ($status === 'shift_invalid' ? 422 : 500));
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode([
+            'success' => $success,
+            'message' => $messages[$status] ?? 'No se pudo guardar la asignación del turno.',
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     header('Location: index.php?status=' . rawurlencode($status) . '#schedules', true, 303);
     exit;
 }
@@ -193,7 +209,55 @@ if ($action === 'update') {
             'horas_descanso' => number_format((float) $breakHours, 2, '.', ''),
             'id' => $templateId,
         ]);
+
+        $updatedAssignmentQuery = $connection->prepare(
+            'SELECT asignaciones_turno.id, asignaciones_turno.usuario_id, asignaciones_turno.turno_id,
+                    plantillas_turnos.id AS plantilla_id, turnos.nombre AS nombre_turno,
+                    turnos.tipo, turnos.hora_inicio, turnos.hora_fin,
+                    turnos.dias_trabajo, turnos.dias_descanso,
+                    plantillas_turnos.horas_descanso, usuarios.nombre AS empleado,
+                    asignaciones_turno.fecha_inicio, asignaciones_turno.fecha_fin
+             FROM asignaciones_turno
+             JOIN usuarios ON usuarios.id = asignaciones_turno.usuario_id
+             JOIN turnos ON turnos.id = asignaciones_turno.turno_id
+             JOIN plantillas_turnos ON plantillas_turnos.turno_id = turnos.id
+             WHERE asignaciones_turno.id = :id AND plantillas_turnos.id = :plantilla_id'
+        );
+        $updatedAssignmentQuery->execute([
+            'id' => $assignmentId,
+            'plantilla_id' => $templateId,
+        ]);
+        $updatedAssignment = $updatedAssignmentQuery->fetch();
+        if ($updatedAssignment === false) {
+            $connection->rollBack();
+            redirectToSchedule('shift_error');
+        }
         $connection->commit();
+
+        if (($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'XMLHttpRequest') {
+            http_response_code(200);
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode([
+                'success' => true,
+                'message' => 'Asignación de turno actualizada correctamente.',
+                'assignment' => [
+                    'id' => (int) $updatedAssignment['id'],
+                    'employeeId' => (int) $updatedAssignment['usuario_id'],
+                    'templateId' => (int) $updatedAssignment['plantilla_id'],
+                    'employee' => $updatedAssignment['empleado'],
+                    'shift' => $updatedAssignment['nombre_turno'],
+                    'type' => $updatedAssignment['tipo'],
+                    'startTime' => substr($updatedAssignment['hora_inicio'], 0, 5),
+                    'endTime' => substr($updatedAssignment['hora_fin'], 0, 5),
+                    'workDays' => (int) $updatedAssignment['dias_trabajo'],
+                    'restDays' => (int) $updatedAssignment['dias_descanso'],
+                    'breakHours' => rtrim(rtrim(number_format((float) $updatedAssignment['horas_descanso'], 2, '.', ''), '0'), '.'),
+                    'startDate' => $updatedAssignment['fecha_inicio'],
+                    'endDate' => $updatedAssignment['fecha_fin'],
+                ],
+            ], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
 
         redirectToSchedule('shift_updated');
     } catch (PDOException $exception) {

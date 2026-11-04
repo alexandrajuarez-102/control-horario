@@ -80,7 +80,10 @@ consultas preparadas y guarda la contraseña con `password_hash()`. Las
 contraseñas nuevas deben tener al menos 7 caracteres.
 
 El panel de administración muestra el historial de fichajes y permite descargar
-todos los registros como CSV compatible con Excel. La fecha y hora exportadas
+registros individuales o de todos los trabajadores como CSV compatible con
+Excel, filtrados por cualquier intervalo de fechas. Cada empleado puede consultar
+un resumen mensual con totales por semana y descargar el detalle de fichajes de
+un único día; las pausas no se repiten en el resumen. La fecha y hora exportadas
 usan la zona horaria `Europe/Madrid`; el CSV incluye nombre, DNI, tipo de evento
 y coordenadas, horas trabajadas y horas extra, y protege los campos de texto
 frente a fórmulas de hoja de cálculo.
@@ -95,11 +98,27 @@ tratamiento antes de habilitarlo en un entorno real.
 El panel admin incluye plantillas de turno fijas y rotativas (5x2, 4x2 y 6x3),
 asignaciones por vigencia sin solapamientos, revisión de solicitudes de ausencia
 y registro manual de bajas médicas, retrasos y faltas. Los empleados pueden solicitar
-vacaciones, citas médicas o asuntos familiares y consultar el estado. Las horas
+vacaciones y distintos permisos familiares, médicos, personales o de conciliación,
+consultar el estado y modificar o eliminar sus solicitudes mientras sigan pendientes.
+El catálogo es orientativo: los requisitos, duración y aprobación dependen de la
+normativa vigente, el convenio y la política de la empresa; no constituye asesoramiento
+legal ni garantiza que un permiso concreto sea retribuido. Las horas
 trabajadas se calculan al fichar salida, descontando pausas; cualquier tiempo
 por encima de ocho horas se almacena como horas extra. Esta regla es un umbral
 configurable de prototipo y no determina por sí sola el tratamiento laboral o
 retributivo de las horas extra.
+
+El perfil de cada empleado permite guardar un cargo opcional de hasta 100
+caracteres. Los fichajes requieren un turno laborable asignado y la entrada solo
+se admite dentro de su horario. Para finalizar después de la hora de salida, el
+empleado debe solicitar los minutos adicionales con su motivo y esperar la
+aprobación del administrador; se autorizan como máximo 12 horas extra por fecha.
+También se contemplan turnos nocturnos que terminan al día siguiente.
+Un servicio programado revisa los turnos vencidos cada minuto y registra una
+salida automática al final del turno (o del tiempo extra autorizado) únicamente
+si existe una entrada real sin cierre. No crea entradas ni completa jornadas
+que el empleado nunca inició. Las salidas automáticas se identifican como tales
+en los registros y descargas.
 
 Administración permite crear plantillas fijas o rotativas con horarios y ciclos
 personalizados; las asignaciones siguen vinculadas a la tabla de turnos existente
@@ -113,12 +132,16 @@ cargar datos ficticios, importa `datos_prueba.sql` desde la carpeta del proyecto
 ```powershell
 docker compose cp migracion_funcionalidades.sql db:/tmp/migracion-funcionalidades.sql
 docker compose exec -T db sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" < /tmp/migracion-funcionalidades.sql && rm /tmp/migracion-funcionalidades.sql'
+docker compose cp migracion_cargos_horas_extra.sql db:/tmp/migracion-cargos-horas-extra.sql
+docker compose exec -T db sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" < /tmp/migracion-cargos-horas-extra.sql && rm /tmp/migracion-cargos-horas-extra.sql'
+docker compose cp migracion_cierre_automatico.sql db:/tmp/migracion-cierre-automatico.sql
+docker compose exec -T db sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" < /tmp/migracion-cierre-automatico.sql && rm /tmp/migracion-cierre-automatico.sql'
 docker compose cp datos_prueba.sql db:/tmp/datos-prueba.sql
 docker compose exec -T db sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" < /tmp/datos-prueba.sql && rm /tmp/datos-prueba.sql'
 docker compose up --build --detach
 ```
 
-La migración conserva usuarios, fichajes y asignaciones, y sincroniza las
+La migración de funcionalidades conserva usuarios, fichajes y asignaciones, y sincroniza las
 plantillas iniciales desde los turnos existentes. El SQL de demostración se
 puede volver a ejecutar sin volver a crear sus usuarios, asignaciones o
 ausencias; requiere que ya exista un administrador y no crea ni actualiza

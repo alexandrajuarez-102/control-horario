@@ -13,6 +13,19 @@ services:
       db:
         condition: service_healthy
 
+  auto-close:
+    build: .
+    command: ["php", "/var/www/html/auto_close_shifts.php"]
+    environment:
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_NAME: control_horario
+      DB_USER: control_app
+      DB_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in .env}
+    depends_on:
+      db:
+        condition: service_healthy
+
   db:
     image: mysql:8.0
     environment:

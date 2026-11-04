@@ -111,7 +111,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         h1 { margin: 0; font-size: 1.8rem; }
-        .subtitle { margin: 8px 0 28px; color: #766f68; }
+        .subtitle { margin: 8px 0 28px; color: #63411e; }
         label { display: block; margin: 18px 0 7px; font-size: .92rem; font-weight: 650; }
 
         input {
@@ -124,7 +124,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             font: inherit;
         }
 
-        input:focus-visible { outline: 3px solid #d5dfd1; border-color: #82927d; }
+        input:focus-visible { outline: 3px solid #d5dfd1; border-color: #41593a; }
 
         .password-field {
             position: relative;
@@ -145,7 +145,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             border: 0;
             border-radius: 7px;
             background: transparent;
-            color: #766f68;
+            color: #75471a;
             cursor: pointer;
         }
         .password-toggle:hover { transform: translateY(-50%); background: #e8eee5; }
@@ -161,16 +161,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             margin-top: 24px;
             border: 0;
             border-radius: 9px;
-            background: #82927d;
+            background: #56714d;
             color: #fff;
             font: inherit;
             font-weight: 700;
             cursor: pointer;
         }
 
-        button:hover { background: #6f806a; }
+        button:hover { background: #3e5238; }
         button:focus-visible { outline: 3px solid #d5dfd1; outline-offset: 3px; }
-        .error { margin: 18px 0 0; color: #b96f5d; font-size: .92rem; }
+        .error { margin: 18px 0 0; color: #9b290c; font-size: .92rem; }
 
         @media (max-width: 480px) {
             main { padding: 28px 22px; }

@@ -43,12 +43,33 @@ if (
 $end = $start->modify('+1 day');
 
 require_once __DIR__ . '/conexion.php';
+require_once __DIR__ . '/horario_empleado.php';
 
 try {
     $connection = getDatabaseConnection();
+    if ($dateValue === (new DateTimeImmutable('today', $madridTimeZone))->format('Y-m-d')) {
+        $previousWorkDate = $start->modify('-1 day');
+        $previousShift = getEmployeeShiftForDate($connection, $user['id'], $previousWorkDate);
+        $latestEvent = getLatestAttendanceEventSince(
+            $connection,
+            $user['id'],
+            $previousWorkDate,
+            new DateTimeImmutable('now', new DateTimeZone('UTC'))
+        );
+        if (
+            $previousShift !== null
+            && $previousShift['works_today']
+            && $previousShift['end_at']->format('Y-m-d') === $dateValue
+            && in_array($latestEvent, ['entry', 'pausa', 'fin_pausa'], true)
+        ) {
+            $start = $previousWorkDate;
+            $end = $start->modify('+2 days');
+        }
+    }
+
     $statement = $connection->prepare(
         'SELECT id, event_type, recorded_at_utc,
-                horas_trabajadas_segundos, horas_extra_segundos, es_hora_extra
+                horas_trabajadas_segundos, horas_extra_segundos, es_hora_extra, es_cierre_automatico
          FROM time_records
          WHERE usuario_id = :usuario_id
            AND recorded_at_utc >= :start
@@ -73,6 +94,7 @@ try {
                 ? null
                 : (int) $record['horas_extra_segundos'],
             'isOvertime' => (bool) $record['es_hora_extra'],
+            'automaticClosure' => (bool) $record['es_cierre_automatico'],
         ],
         $statement->fetchAll()
     );
@@ -80,5 +102,8 @@ try {
     respond(200, ['records' => $records]);
 } catch (PDOException $exception) {
     error_log('No se pudieron consultar los fichajes: ' . $exception->getMessage());
+    respond(500, ['message' => 'No se pudieron cargar los registros. Inténtalo de nuevo más tarde.']);
+} catch (RuntimeException $exception) {
+    error_log('No se pudo determinar el turno para consultar fichajes: ' . $exception->getMessage());
     respond(500, ['message' => 'No se pudieron cargar los registros. Inténtalo de nuevo más tarde.']);
 }

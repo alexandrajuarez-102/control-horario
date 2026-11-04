@@ -54,7 +54,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     try {
         $connection = getDatabaseConnection();
         $employeeQuery = $connection->prepare(
-            "SELECT id, nombre, dni, direccion, correo
+            "SELECT id, nombre, cargo, dni, direccion, correo
              FROM usuarios WHERE id = :id AND rol = 'empleado'"
         );
         $employeeQuery->execute(['id' => $employeeId]);
@@ -64,7 +64,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         }
 
         $recordsQuery = $connection->prepare(
-            "SELECT event_type, recorded_at_utc, horas_trabajadas_segundos, horas_extra_segundos
+            "SELECT event_type, recorded_at_utc, horas_trabajadas_segundos, horas_extra_segundos,
+                    es_cierre_automatico
              FROM time_records
              WHERE usuario_id = :usuario_id
                AND event_type IN ('entry', 'exit')
@@ -85,6 +86,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 return [
                     'fecha' => $recordedAt->format('d/m/Y'),
                     'tipo' => $record['event_type'] === 'entry' ? 'Entrada' : 'Salida',
+                    'cierreAutomatico' => (bool) $record['es_cierre_automatico'],
                     'hora' => $recordedAt->format('H:i:s'),
                     'workedSeconds' => $record['horas_trabajadas_segundos'] === null
                         ? null
@@ -122,6 +124,7 @@ $employeeId = filter_var($_POST['usuario_id'] ?? null, FILTER_VALIDATE_INT);
 $name = trim(is_string($_POST['nombre'] ?? null) ? $_POST['nombre'] : '');
 $dni = trim(is_string($_POST['dni'] ?? null) ? $_POST['dni'] : '');
 $address = trim(is_string($_POST['direccion'] ?? null) ? $_POST['direccion'] : '');
+$jobTitle = trim(is_string($_POST['cargo'] ?? null) ? $_POST['cargo'] : '');
 $email = trim(is_string($_POST['correo'] ?? null) ? $_POST['correo'] : '');
 if (
     $employeeId === false
@@ -130,6 +133,7 @@ if (
     || profileTextLength($name) > 150
     || ($dni !== '' && profileTextLength($dni) > 20)
     || ($address !== '' && profileTextLength($address) > 255)
+    || ($jobTitle !== '' && profileTextLength($jobTitle) > 100)
     || filter_var($email, FILTER_VALIDATE_EMAIL) === false
     || strlen($email) > 254
 ) {
@@ -150,11 +154,12 @@ try {
 
     $update = $connection->prepare(
         'UPDATE usuarios
-         SET nombre = :nombre, dni = :dni, direccion = :direccion, correo = :correo
+         SET nombre = :nombre, cargo = :cargo, dni = :dni, direccion = :direccion, correo = :correo
          WHERE id = :id'
     );
     $update->execute([
         'nombre' => $name,
+        'cargo' => $jobTitle === '' ? null : $jobTitle,
         'dni' => $dni === '' ? null : $dni,
         'direccion' => $address === '' ? null : $address,
         'correo' => $email,
@@ -167,6 +172,7 @@ try {
         'employee' => [
             'id' => $employeeId,
             'nombre' => $name,
+            'cargo' => $jobTitle === '' ? null : $jobTitle,
             'dni' => $dni === '' ? null : $dni,
             'direccion' => $address === '' ? null : $address,
             'correo' => $email,

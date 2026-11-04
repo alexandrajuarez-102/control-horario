@@ -88,6 +88,7 @@ try {
 }
 
 require_once __DIR__ . '/conexion.php';
+require_once __DIR__ . '/horario_empleado.php';
 
 try {
     $now = new DateTimeImmutable('now', new DateTimeZone('UTC'));
@@ -101,18 +102,61 @@ try {
         respond(401, ['message' => 'La cuenta ya no está disponible. Inicia sesión de nuevo.']);
     }
 
-    $localDate = $now->setTimezone(new DateTimeZone('Europe/Madrid'))->format('Y-m-d');
-    $dayStart = DateTimeImmutable::createFromFormat(
-        '!Y-m-d',
-        $localDate,
-        new DateTimeZone('Europe/Madrid')
-    );
-    if ($dayStart === false) {
-        $connection->rollBack();
-        respond(500, ['message' => 'No se pudo determinar la fecha del fichaje.']);
+    $madrid = new DateTimeZone('Europe/Madrid');
+    $localToday = $now->setTimezone($madrid)->setTime(0, 0);
+    $localDate = $localToday->format('Y-m-d');
+    $dayStart = $localToday;
+    $workDate = $dayStart;
+    $shift = getEmployeeShiftForDate($connection, $user['id'], $workDate);
+    $previousWorkDate = $workDate->modify('-1 day');
+    $previousShift = getEmployeeShiftForDate($connection, $user['id'], $previousWorkDate);
+    $previousEvent = getLatestAttendanceEventSince($connection, $user['id'], $previousWorkDate, $now);
+    if (
+        $previousShift !== null
+        && $previousShift['works_today']
+        && $previousShift['end_at']->format('Y-m-d') === $localDate
+        && in_array($previousEvent, ['entry', 'pausa', 'fin_pausa'], true)
+    ) {
+        $workDate = $previousWorkDate;
+        $shift = $previousShift;
     }
-    $dayStartUtc = $dayStart->setTimezone(new DateTimeZone('UTC'));
-    $dayEndUtc = $dayStart->modify('+1 day')->setTimezone(new DateTimeZone('UTC'));
+    if ($shift === null || !$shift['works_today']) {
+        $connection->rollBack();
+        respond(409, ['message' => 'No tienes un turno asignado para hoy. Contacta con administración.']);
+    }
+
+    $localDate = $workDate->format('Y-m-d');
+    $dayStartUtc = $workDate->setTimezone(new DateTimeZone('UTC'));
+    $dayEnd = $shift['end_at']->format('Y-m-d') > $localDate
+        ? $workDate->modify('+2 days')
+        : $workDate->modify('+1 day');
+    $dayEndUtc = $dayEnd->setTimezone(new DateTimeZone('UTC'));
+    $nowMadrid = $now->setTimezone($madrid);
+    if ($eventType === 'entry' && ($nowMadrid < $shift['start_at'] || $nowMadrid >= $shift['end_at'])) {
+        $connection->rollBack();
+        respond(409, [
+            'message' => 'Solo puedes fichar la entrada dentro del horario asignado: '
+                . $shift['start_at']->format('H:i') . '–' . $shift['end_at']->format('H:i') . '.',
+        ]);
+    }
+    if ($eventType !== 'entry' && $nowMadrid < $shift['start_at']) {
+        $connection->rollBack();
+        respond(409, ['message' => 'Todavía no ha comenzado tu turno asignado.']);
+    }
+    $requiresOvertimeApproval = $nowMadrid > $shift['end_at']
+        || ($eventType !== 'exit' && $nowMadrid >= $shift['end_at']);
+    if ($requiresOvertimeApproval) {
+        $approvedMinutes = getApprovedOvertimeMinutes($connection, $user['id'], $localDate);
+        $authorizedEnd = $shift['end_at']->modify('+' . $approvedMinutes . ' minutes');
+        if ($approvedMinutes === 0 || $nowMadrid > $authorizedEnd) {
+            $connection->rollBack();
+            respond(409, [
+                'message' => $approvedMinutes === 0
+                    ? 'Tu turno ha terminado y no tienes horas extra aprobadas. Solicítalas al administrador antes de continuar.'
+                    : 'Se ha agotado el tiempo extra autorizado. Contacta con administración antes de continuar.',
+            ]);
+        }
+    }
 
     $recordsQuery = $connection->prepare(
         'SELECT event_type, recorded_at_utc
@@ -162,11 +206,13 @@ try {
                 $workStartedAt = $recordedAt;
                 break;
             case 'exit':
-                if ($state !== 'working' || $workStartedAt === null) {
+                if (!in_array($state, ['working', 'paused'], true)) {
                     $invalidSequence = true;
                     break 2;
                 }
-                $workedSeconds += (float) $recordedAt->format('U.u') - (float) $workStartedAt->format('U.u');
+                if ($state === 'working' && $workStartedAt !== null) {
+                    $workedSeconds += (float) $recordedAt->format('U.u') - (float) $workStartedAt->format('U.u');
+                }
                 $state = 'off';
                 $workStartedAt = null;
                 break;
@@ -181,7 +227,7 @@ try {
     $validNextEvents = [
         'off' => ['entry'],
         'working' => ['pausa', 'exit'],
-        'paused' => ['fin_pausa'],
+        'paused' => ['fin_pausa', 'exit'],
     ];
     if (!in_array($eventType, $validNextEvents[$state], true)) {
         $connection->rollBack();
@@ -191,8 +237,10 @@ try {
     $recordWorkedSeconds = null;
     $overtimeSeconds = null;
     $isOvertime = false;
-    if ($eventType === 'exit' && $workStartedAt !== null) {
-        $workedSeconds += (float) $now->format('U.u') - (float) $workStartedAt->format('U.u');
+    if ($eventType === 'exit') {
+        if ($workStartedAt !== null) {
+            $workedSeconds += (float) $now->format('U.u') - (float) $workStartedAt->format('U.u');
+        }
         $recordWorkedSeconds = max(0, (int) floor($workedSeconds));
         $overtimeSeconds = max(0, $recordWorkedSeconds - 8 * 60 * 60);
         $isOvertime = $overtimeSeconds > 0;

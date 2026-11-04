@@ -34,10 +34,19 @@ $flashMessages = [
     'calendar_invalid' => ['state' => 'error', 'text' => 'Revisa el título, la fecha y el tipo de evento.'],
     'calendar_error' => ['state' => 'error', 'text' => 'No se pudo guardar el evento. Inténtalo más tarde.'],
     'absence_requested' => ['state' => 'success', 'text' => 'Solicitud enviada para revisión.'],
+    'absence_updated' => ['state' => 'success', 'text' => 'Solicitud modificada correctamente.'],
+    'absence_deleted' => ['state' => 'success', 'text' => 'Solicitud eliminada correctamente.'],
     'absence_reviewed' => ['state' => 'success', 'text' => 'Solicitud actualizada.'],
     'absence_recorded' => ['state' => 'success', 'text' => 'Incidencia registrada.'],
     'absence_invalid' => ['state' => 'error', 'text' => 'Los datos de la ausencia no son válidos.'],
     'absence_error' => ['state' => 'error', 'text' => 'No se pudo guardar la ausencia. Inténtalo más tarde.'],
+    'overtime_requested' => ['state' => 'success', 'text' => 'Solicitud de horas extra enviada al administrador.'],
+    'overtime_reviewed' => ['state' => 'success', 'text' => 'Solicitud de horas extra revisada.'],
+    'overtime_pending' => ['state' => 'error', 'text' => 'Ya tienes una solicitud pendiente para ese día.'],
+    'overtime_no_shift' => ['state' => 'error', 'text' => 'No tienes un turno laborable asignado para ese día.'],
+    'overtime_limit' => ['state' => 'error', 'text' => 'La autorización superaría el máximo de 12 horas extra en ese día.'],
+    'overtime_invalid' => ['state' => 'error', 'text' => 'Revisa la fecha, los minutos y el motivo de la solicitud.'],
+    'overtime_error' => ['state' => 'error', 'text' => 'No se pudo guardar la solicitud de horas extra. Inténtalo más tarde.'],
 ];
 $statusParam = is_string($_GET['status'] ?? null) ? $_GET['status'] : '';
 $flash = $flashMessages[$statusParam] ?? null;
@@ -51,9 +60,14 @@ $shiftAssignments = [];
 $scheduleError = false;
 $absenceRecords = [];
 $absenceError = false;
+$overtimeRequests = [];
+$overtimeError = false;
+$pendingOvertimeCount = 0;
+$employeeOvertimeRequests = [];
 $employeeSchedule = null;
 $pendingAbsenceCount = 0;
 $dashboardError = false;
+$employeeCargo = null;
 $workChart = ['labels' => [], 'worked' => [], 'overtime' => []];
 $staffStatusChart = ['working' => 0, 'vacation' => 0, 'sick' => 0, 'off' => 0];
 
@@ -63,7 +77,7 @@ if ($user['rol'] === 'admin') {
     try {
         $connection = getDatabaseConnection();
         $statement = $connection->query(
-            'SELECT id, nombre, dni, direccion, correo, rol
+            'SELECT id, nombre, cargo, dni, direccion, correo, rol
              FROM usuarios
              ORDER BY nombre ASC, id ASC'
         );
@@ -85,6 +99,7 @@ if ($user['rol'] === 'admin') {
                 time_records.horas_trabajadas_segundos,
                 time_records.horas_extra_segundos,
                 time_records.es_hora_extra,
+                time_records.es_cierre_automatico,
                 usuarios.nombre,
                 usuarios.dni
              FROM time_records
@@ -149,6 +164,27 @@ if ($user['rol'] === 'admin') {
     } catch (PDOException $exception) {
         error_log('No se pudieron cargar las solicitudes de ausencia: ' . $exception->getMessage());
         $absenceError = true;
+    }
+
+    try {
+        $statement = $connection->query(
+            'SELECT solicitudes_horas_extra.id, solicitudes_horas_extra.usuario_id,
+                    solicitudes_horas_extra.fecha, solicitudes_horas_extra.minutos,
+                    solicitudes_horas_extra.motivo, solicitudes_horas_extra.estado,
+                    usuarios.nombre AS empleado, usuarios.cargo
+             FROM solicitudes_horas_extra
+             JOIN usuarios ON usuarios.id = solicitudes_horas_extra.usuario_id
+             ORDER BY (solicitudes_horas_extra.estado = \'pendiente\') DESC,
+                      solicitudes_horas_extra.fecha DESC, solicitudes_horas_extra.id DESC'
+        );
+        $overtimeRequests = $statement->fetchAll();
+        $pendingOvertimeCount = count(array_filter(
+            $overtimeRequests,
+            static fn (array $request): bool => $request['estado'] === 'pendiente'
+        ));
+    } catch (PDOException $exception) {
+        error_log('No se pudieron cargar las solicitudes de horas extra: ' . $exception->getMessage());
+        $overtimeError = true;
     }
 
     try {
@@ -247,6 +283,9 @@ if ($user['rol'] === 'admin') {
     try {
         require_once __DIR__ . '/conexion.php';
         $connection = getDatabaseConnection();
+        $cargoQuery = $connection->prepare('SELECT cargo FROM usuarios WHERE id = :usuario_id');
+        $cargoQuery->execute(['usuario_id' => $user['id']]);
+        $employeeCargo = $cargoQuery->fetchColumn() ?: null;
         $today = (new DateTimeImmutable('now', new DateTimeZone('Europe/Madrid')))->format('Y-m-d');
         $scheduleQuery = $connection->prepare(
             'SELECT turnos.nombre, turnos.tipo, turnos.hora_inicio, turnos.hora_fin,
@@ -281,6 +320,15 @@ if ($user['rol'] === 'admin') {
         );
         $statement->execute(['usuario_id' => $user['id']]);
         $absenceRecords = $statement->fetchAll();
+
+        $overtimeStatement = $connection->prepare(
+            'SELECT id, fecha, minutos, motivo, estado
+             FROM solicitudes_horas_extra
+             WHERE usuario_id = :usuario_id
+             ORDER BY fecha DESC, id DESC'
+        );
+        $overtimeStatement->execute(['usuario_id' => $user['id']]);
+        $employeeOvertimeRequests = $overtimeStatement->fetchAll();
     } catch (PDOException $exception) {
         error_log('No se pudieron cargar las ausencias del empleado: ' . $exception->getMessage());
         $absenceError = true;
@@ -298,6 +346,17 @@ $absenceLabels = [
     'vacaciones' => 'Vacaciones',
     'medico' => 'Cita médica',
     'asuntos_familiares' => 'Asuntos familiares',
+    'fallecimiento_familiar' => 'Fallecimiento de familiar',
+    'hospitalizacion_familiar' => 'Hospitalización o intervención de familiar',
+    'deber_inexcusable' => 'Deber público o personal inexcusable',
+    'mudanza' => 'Traslado de domicilio',
+    'matrimonio' => 'Matrimonio o registro de pareja',
+    'nacimiento_cuidado' => 'Nacimiento y cuidado de menor',
+    'lactancia' => 'Cuidado del lactante',
+    'fuerza_mayor_familiar' => 'Fuerza mayor familiar urgente',
+    'permiso_retribuido' => 'Otro permiso retribuido',
+    'permiso_no_retribuido' => 'Permiso no retribuido',
+    'otros' => 'Otro motivo',
     'baja_medica' => 'Baja médica',
     'retraso' => 'Retraso',
     'falta' => 'Falta',
@@ -316,57 +375,69 @@ $absenceStatusLabels = [
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="Panel de control horario">
     <meta name="csrf-token" content="<?= htmlspecialchars($_SESSION['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
-    <meta name="theme-color" content="#393632">
+    <meta name="theme-color" content="#0b1220">
     <link rel="manifest" href="manifest.json">
     <title>Control horario</title>
     <style>
         :root {
             color-scheme: light;
             font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-            color: #3e3a36;
-            background: #f5f2ee;
-            --page-bg: #f5f2ee;
-            --surface: #fffdfa;
-            --surface-muted: #f2eee8;
-            --text: #3e3a36;
-            --muted: #766f68;
-            --border: #e7ded5;
-            --input-border: #cfc4b9;
-            --shadow: 0 16px 40px rgb(67 54 43 / 8%);
-            --sidebar-bg: #393632;
-            --sidebar-text: #f4eee8;
-            --accent: #82927d;
-            --accent-hover: #6f806a;
-            --accent-soft: #e8eee5;
-            --lavender: #91819d;
-            --lavender-soft: #eee9f1;
-            --danger: #b96f5d;
-            --danger-hover: #a65d4d;
-            --success: #66836a;
-            --warning: #a77740;
+            color: var(--text);
+            background: var(--page-bg);
+            --page-bg: #f1f5f9;
+            --surface: #ffffff;
+            --surface-muted: #eaf0f7;
+            --text: #172033;
+            --muted: #526078;
+            --border: #dce4ef;
+            --input-border: #b8c5d6;
+            --shadow: 0 16px 40px rgb(15 23 42 / 8%);
+            --sidebar-bg: #0b1220;
+            --sidebar-text: #ffffff;
+            --accent: #1d4ed8;
+            --accent-hover: #1e40af;
+            --accent-soft: #e7efff;
+            --lavender: #7c3aed;
+            --lavender-soft: #f1eafe;
+            --danger: #be123c;
+            --danger-hover: #9f1239;
+            --success: #047857;
+            --warning: #92400e;
+            --chart-worked: #2563eb;
+            --chart-overtime: #d97706;
+            --chart-working: #059669;
+            --chart-vacation: #8b5cf6;
+            --chart-sick: #e11d48;
+            --chart-off: #94a3b8;
         }
 
         :root[data-theme="dark"] {
             color-scheme: dark;
-            --page-bg: #24211f;
-            --surface: #302c29;
-            --surface-muted: #3a3531;
-            --text: #f0e9e2;
-            --muted: #b9aea3;
-            --border: #4b433d;
-            --input-border: #62574f;
+            --page-bg: #111827;
+            --surface: #1f2937;
+            --surface-muted: #273449;
+            --text: #f1f5f9;
+            --muted: #a9b5c8;
+            --border: #39475c;
+            --input-border: #52627a;
             --shadow: 0 16px 40px rgb(0 0 0 / 24%);
-            --sidebar-bg: #302d2a;
-            --sidebar-text: #f4eee8;
-            --accent: #9baa95;
-            --accent-hover: #adbaa7;
-            --accent-soft: #3c493c;
-            --lavender: #b0a0bb;
-            --lavender-soft: #443c48;
-            --danger: #d18a78;
-            --danger-hover: #dfa08f;
-            --success: #91b095;
-            --warning: #d2a66d;
+            --sidebar-bg: #080e1a;
+            --sidebar-text: #ffffff;
+            --accent: #2563eb;
+            --accent-hover: #93c5fd;
+            --accent-soft: #1e3a8a;
+            --lavender: #a78bfa;
+            --lavender-soft: #35265d;
+            --danger: #fb7185;
+            --danger-hover: #fda4af;
+            --success: #34d399;
+            --warning: #fbbf24;
+            --chart-worked: #60a5fa;
+            --chart-overtime: #fbbf24;
+            --chart-working: #34d399;
+            --chart-vacation: #a78bfa;
+            --chart-sick: #fb7185;
+            --chart-off: #64748b;
             background: var(--page-bg);
             color: var(--text);
         }
@@ -427,7 +498,7 @@ $absenceStatusLabels = [
         }
         .sidebar-label {
             margin: 0 10px 10px;
-            color: #c1b6ab;
+            color: #cbd5e1;
             font-size: .72rem;
             font-weight: 750;
             letter-spacing: .1em;
@@ -464,7 +535,7 @@ $absenceStatusLabels = [
         .sidebar-user {
             overflow: hidden;
             margin: 16px 8px 0;
-            color: #b9aea3;
+            color: #cbd5e1;
             font-size: .82rem;
             text-overflow: ellipsis;
             white-space: nowrap;
@@ -557,6 +628,26 @@ $absenceStatusLabels = [
             grid-template-columns: repeat(3, minmax(0, 1fr));
             gap: 16px;
         }
+        .summary-month-picker { max-width: 240px; margin-bottom: 16px; }
+        .summary-metrics {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 12px;
+            margin: 18px 0;
+        }
+        .summary-metrics article {
+            display: grid;
+            gap: 6px;
+            padding: 16px;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            background: var(--surface);
+        }
+        .summary-metrics span { color: var(--muted); font-size: .9rem; }
+        .summary-metrics strong { font-size: 1.35rem; }
+        .daily-records-details { margin-top: 20px; }
+        .daily-records-details > summary { color: var(--accent); font-weight: 700; cursor: pointer; }
+        .daily-records-details[open] > summary { margin-bottom: 14px; }
         .field label { display: block; margin-bottom: 7px; font-size: .9rem; font-weight: 650; }
         .field input, .field select {
             width: 100%;
@@ -690,12 +781,36 @@ $absenceStatusLabels = [
             font-weight: 700;
             text-decoration: none;
         }
-        .export-button:hover { background: var(--accent-hover); }
+        .export-button:hover { background: var(--accent); }
+        .export-filter-form,
+        .profile-export-form {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: end;
+            gap: 14px;
+            margin: 0 0 16px;
+        }
+        .export-filter-form .field { min-width: 180px; }
+        .profile-export-form .field { min-width: 150px; flex: 1; }
+        .export-filter-form .export-button,
+        .profile-export-form .export-button { margin: 0; }
         .status { margin: 0 0 18px; color: var(--muted); }
         .status[data-state="error"] { color: var(--danger); }
         .status[data-state="success"] { color: var(--success); }
         .status[data-state="overtime"], .overtime-row { color: var(--warning); font-weight: 700; }
         td[data-state="overtime"] { color: var(--warning); font-weight: 700; }
+        .absence-actions { display: grid; gap: 8px; min-width: 100px; }
+        .absence-actions form { margin: 0; }
+        .absence-actions button { min-height: 36px; padding: 0 10px; font-size: .85rem; }
+        .absence-edit-details summary {
+            color: var(--accent);
+            font-weight: 700;
+            cursor: pointer;
+        }
+        .absence-edit-details form { display: grid; gap: 10px; min-width: 260px; margin-top: 12px; }
+        .absence-edit-details .field input,
+        .absence-edit-details .field select { min-height: 38px; }
+        .absence-edit-details .field label { font-size: .82rem; }
 
         .table-wrap { overflow-x: auto; }
         table { width: 100%; border-collapse: collapse; text-align: left; }
@@ -738,7 +853,7 @@ $absenceStatusLabels = [
         :root[data-theme="dark"] input,
         :root[data-theme="dark"] select { background: var(--surface-muted); color: var(--text); }
         :root[data-theme="dark"] .logout-button { background: var(--surface-muted); color: var(--accent); }
-        :root[data-theme="dark"] .role-badge { background: var(--accent-soft); color: var(--accent); }
+        :root[data-theme="dark"] .role-badge { background: var(--accent-soft); color: var(--accent-hover); }
         :root[data-theme="dark"] .notification-count { color: #fff; }
         :root[data-theme="dark"] .status[data-state="error"] { color: #ff9a9a; }
         :root[data-theme="dark"] .status[data-state="success"] { color: var(--success); }
@@ -772,6 +887,7 @@ $absenceStatusLabels = [
             .user-bar { align-items: flex-start; flex-direction: column; }
             .actions button { flex: 1 1 100%; }
             .form-grid, .form-grid-three { grid-template-columns: 1fr; }
+            .summary-metrics { grid-template-columns: 1fr; }
             .dashboard-grid { gap: 14px; }
             .chart-wrap { min-height: 230px; }
             .calendar-container { min-height: 520px; }
@@ -816,6 +932,14 @@ $absenceStatusLabels = [
                     <a class="sidebar-link" href="#schedules"><span class="sidebar-icon" aria-hidden="true">◷</span>Turnos</a>
                     <a class="sidebar-link" href="#shift-templates" aria-controls="shift-templates"><span class="sidebar-icon" aria-hidden="true">＋</span>Plantillas de Turnos</a>
                     <a class="sidebar-link" href="#attendance-history"><span class="sidebar-icon" aria-hidden="true">▤</span>Fichajes</a>
+                    <a class="sidebar-link" href="#overtime-requests" aria-label="Horas extra<?= $pendingOvertimeCount > 0 ? ', ' . $pendingOvertimeCount . ' solicitudes pendientes' : '' ?>">
+                        <span class="sidebar-icon" aria-hidden="true">＋</span>Horas extra
+                        <?php if ($pendingOvertimeCount > 0): ?>
+                            <span class="notification-count sidebar-bell" aria-label="<?= $pendingOvertimeCount ?> solicitudes pendientes">
+                                <?= $pendingOvertimeCount > 99 ? '99+' : $pendingOvertimeCount ?>
+                            </span>
+                        <?php endif; ?>
+                    </a>
                     <a class="sidebar-link" href="#absence-admin" aria-label="Permisos<?= $pendingAbsenceCount > 0 ? ', ' . $pendingAbsenceCount . ' solicitudes pendientes' : '' ?>">
                         <span class="sidebar-icon" aria-hidden="true">🔔</span>Permisos
                         <?php if ($pendingAbsenceCount > 0): ?>
@@ -855,6 +979,9 @@ $absenceStatusLabels = [
                 <p class="user-name">
                     Sesión de <strong><?= htmlspecialchars($user['nombre'], ENT_QUOTES, 'UTF-8') ?></strong>
                     <span class="role-badge"><?= $user['rol'] === 'admin' ? 'Administrador' : 'Empleado' ?></span>
+                    <?php if ($user['rol'] === 'empleado' && $employeeCargo !== null): ?>
+                        <span class="role-badge"><?= htmlspecialchars($employeeCargo, ENT_QUOTES, 'UTF-8') ?></span>
+                    <?php endif; ?>
                 </p>
                 <form action="logout.php" method="post">
                     <input
@@ -952,6 +1079,10 @@ $absenceStatusLabels = [
                             <input id="nombre" name="nombre" type="text" maxlength="150" autocomplete="name" required>
                         </div>
                         <div class="field">
+                            <label for="cargo">Cargo en la empresa</label>
+                            <input id="cargo" name="cargo" type="text" maxlength="100" autocomplete="organization-title">
+                        </div>
+                        <div class="field">
                             <label for="dni">DNI</label>
                             <input id="dni" name="dni" type="text" maxlength="20" autocomplete="off">
                         </div>
@@ -991,6 +1122,7 @@ $absenceStatusLabels = [
                             <thead>
                                 <tr>
                                     <th scope="col">Nombre</th>
+                                    <th scope="col">Cargo</th>
                                     <th scope="col">DNI</th>
                                     <th scope="col">Dirección</th>
                                     <th scope="col">Correo</th>
@@ -1000,11 +1132,12 @@ $absenceStatusLabels = [
                             </thead>
                             <tbody>
                                 <?php if ($users === []): ?>
-                                    <tr><td class="empty-row" colspan="6">No hay usuarios registrados.</td></tr>
+                                    <tr><td class="empty-row" colspan="7">No hay usuarios registrados.</td></tr>
                                 <?php else: ?>
                                     <?php foreach ($users as $registeredUser): ?>
                                         <tr data-user-row="<?= (int) $registeredUser['id'] ?>">
                                             <td data-profile-name><?= htmlspecialchars($registeredUser['nombre'], ENT_QUOTES, 'UTF-8') ?></td>
+                                            <td data-profile-cargo><?= htmlspecialchars($registeredUser['cargo'] ?? '', ENT_QUOTES, 'UTF-8') ?: '—' ?></td>
                                             <td data-profile-dni><?= htmlspecialchars($registeredUser['dni'] ?? '', ENT_QUOTES, 'UTF-8') ?: '—' ?></td>
                                             <td data-profile-address><?= htmlspecialchars($registeredUser['direccion'] ?? '', ENT_QUOTES, 'UTF-8') ?: '—' ?></td>
                                             <td data-profile-email><?= htmlspecialchars($registeredUser['correo'], ENT_QUOTES, 'UTF-8') ?></td>
@@ -1046,6 +1179,10 @@ $absenceStatusLabels = [
                             <input id="profile-name" name="nombre" maxlength="150" required>
                         </div>
                         <div class="field">
+                            <label for="profile-cargo">Cargo en la empresa</label>
+                            <input id="profile-cargo" name="cargo" maxlength="100">
+                        </div>
+                        <div class="field">
                             <label for="profile-dni">DNI</label>
                             <input id="profile-dni" name="dni" maxlength="20">
                         </div>
@@ -1064,6 +1201,18 @@ $absenceStatusLabels = [
                 </form>
                 <section aria-labelledby="profile-attendance-title">
                     <h2 id="profile-attendance-title">Historial de fichajes</h2>
+                    <form action="exportar.php" method="get" class="profile-export-form">
+                        <input id="profile-export-employee" type="hidden" name="usuario_id">
+                        <div class="field">
+                            <label for="profile-export-start">Desde</label>
+                            <input id="profile-export-start" name="desde" type="date" required>
+                        </div>
+                        <div class="field">
+                            <label for="profile-export-end">Hasta</label>
+                            <input id="profile-export-end" name="hasta" type="date" required>
+                        </div>
+                        <button class="export-button" type="submit">Descargar fichajes del trabajador</button>
+                    </form>
                     <div class="field">
                         <label for="profile-month">Mes</label>
                         <input id="profile-month" type="month" required>
@@ -1203,6 +1352,7 @@ $absenceStatusLabels = [
                 <?php endif; ?>
 
                 <h2>Asignaciones de turnos</h2>
+                <p class="status" id="schedule-edit-status" role="status" aria-live="polite" hidden></p>
                 <?php if (!$scheduleError): ?>
                     <div class="table-wrap">
                         <table>
@@ -1326,7 +1476,27 @@ $absenceStatusLabels = [
 
             <section class="card seccion-panel" id="attendance-history" aria-labelledby="attendance-history-title">
                 <h2 id="attendance-history-title">Historial de fichajes de la empresa</h2>
-                <a class="export-button" href="exportar.php"><span aria-hidden="true">⇩</span> Exportar a Excel (CSV)</a>
+                <form action="exportar.php" method="get" class="export-filter-form">
+                    <div class="field">
+                        <label for="export-employee">Trabajador</label>
+                        <select id="export-employee" name="usuario_id">
+                            <option value="">Todos los trabajadores</option>
+                            <?php foreach ($employees as $employee): ?>
+                                <option value="<?= (int) $employee['id'] ?>"><?= htmlspecialchars($employee['nombre'], ENT_QUOTES, 'UTF-8') ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="export-start">Desde</label>
+                        <input id="export-start" name="desde" type="date" required>
+                    </div>
+                    <div class="field">
+                        <label for="export-end">Hasta</label>
+                        <input id="export-end" name="hasta" type="date" required>
+                    </div>
+                    <button class="export-button" type="submit"><span aria-hidden="true">⇩</span> Descargar Excel (CSV)</button>
+                </form>
+                <p class="status">Selecciona un trabajador o todos, y cualquier periodo (mes, varios meses o años). El archivo incluye entradas, pausas, fin de pausa y salidas.</p>
                 <?php if ($attendanceError): ?>
                     <p class="status" data-state="error" role="alert">No se pudo cargar el historial de fichajes.</p>
                 <?php else: ?>
@@ -1359,7 +1529,13 @@ $absenceStatusLabels = [
                                             <td><?= htmlspecialchars($record['dni'] ?? '', ENT_QUOTES, 'UTF-8') ?: '—' ?></td>
                                             <td><?= htmlspecialchars($recordedAt->format('d/m/Y'), ENT_QUOTES, 'UTF-8') ?></td>
                                             <td><?= htmlspecialchars($recordedAt->format('H:i:s.u'), ENT_QUOTES, 'UTF-8') ?></td>
-                                            <td><?= htmlspecialchars($eventLabels[$record['event_type']] ?? $record['event_type'], ENT_QUOTES, 'UTF-8') ?></td>
+                                            <td><?= htmlspecialchars(
+                                                (bool) $record['es_cierre_automatico']
+                                                    ? 'Salida (cierre automático)'
+                                                    : ($eventLabels[$record['event_type']] ?? $record['event_type']),
+                                                ENT_QUOTES,
+                                                'UTF-8'
+                                            ) ?></td>
                                             <td><?= htmlspecialchars($record['latitud'] ?? '', ENT_QUOTES, 'UTF-8') ?: '—' ?></td>
                                             <td><?= htmlspecialchars($record['longitud'] ?? '', ENT_QUOTES, 'UTF-8') ?: '—' ?></td>
                                             <td>
@@ -1372,6 +1548,64 @@ $absenceStatusLabels = [
                                             <td data-state="<?= (bool) $record['es_hora_extra'] ? 'overtime' : '' ?>">
                                                 <?php if ($record['horas_extra_segundos'] !== null): ?>
                                                     <?= sprintf('%02d:%02d', intdiv((int) $record['horas_extra_segundos'], 3600), intdiv((int) $record['horas_extra_segundos'] % 3600, 60)) ?>
+                                                <?php else: ?>
+                                                    —
+                                                <?php endif; ?>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php endif; ?>
+            </section>
+
+            <section class="card seccion-panel" id="overtime-requests" aria-labelledby="overtime-requests-title">
+                <h2 id="overtime-requests-title">Solicitudes de horas extra</h2>
+                <?php if ($flash !== null && str_starts_with($statusParam, 'overtime_')): ?>
+                    <p class="status" data-state="<?= htmlspecialchars($flash['state'], ENT_QUOTES, 'UTF-8') ?>" role="status">
+                        <?= htmlspecialchars($flash['text'], ENT_QUOTES, 'UTF-8') ?>
+                    </p>
+                <?php endif; ?>
+                <?php if ($overtimeError): ?>
+                    <p class="status" data-state="error" role="alert">No se pudieron cargar las solicitudes de horas extra.</p>
+                <?php else: ?>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr><th>Trabajador</th><th>Cargo</th><th>Fecha</th><th>Minutos</th><th>Motivo</th><th>Estado</th><th>Acción</th></tr>
+                            </thead>
+                            <tbody>
+                                <?php if ($overtimeRequests === []): ?>
+                                    <tr><td class="empty-row" colspan="7">No hay solicitudes de horas extra.</td></tr>
+                                <?php else: ?>
+                                    <?php foreach ($overtimeRequests as $request): ?>
+                                        <tr>
+                                            <td><?= htmlspecialchars($request['empleado'], ENT_QUOTES, 'UTF-8') ?></td>
+                                            <td><?= htmlspecialchars($request['cargo'] ?? '', ENT_QUOTES, 'UTF-8') ?: '—' ?></td>
+                                            <td><?= htmlspecialchars($request['fecha'], ENT_QUOTES, 'UTF-8') ?></td>
+                                            <td><?= (int) $request['minutos'] ?></td>
+                                            <td><?= htmlspecialchars($request['motivo'], ENT_QUOTES, 'UTF-8') ?></td>
+                                            <td><?= htmlspecialchars(ucfirst($request['estado']), ENT_QUOTES, 'UTF-8') ?></td>
+                                            <td>
+                                                <?php if ($request['estado'] === 'pendiente'): ?>
+                                                    <div class="absence-actions">
+                                                        <form action="gestionar_horas_extra.php" method="post">
+                                                            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
+                                                            <input type="hidden" name="action" value="review">
+                                                            <input type="hidden" name="solicitud_id" value="<?= (int) $request['id'] ?>">
+                                                            <input type="hidden" name="decision" value="aprobada">
+                                                            <button class="approve-button" type="submit">Aprobar</button>
+                                                        </form>
+                                                        <form action="gestionar_horas_extra.php" method="post">
+                                                            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
+                                                            <input type="hidden" name="action" value="review">
+                                                            <input type="hidden" name="solicitud_id" value="<?= (int) $request['id'] ?>">
+                                                            <input type="hidden" name="decision" value="rechazada">
+                                                            <button class="reject-button" type="submit">Rechazar</button>
+                                                        </form>
+                                                    </div>
                                                 <?php else: ?>
                                                     —
                                                 <?php endif; ?>
@@ -1507,17 +1741,93 @@ $absenceStatusLabels = [
                     Las horas trabajadas y las posibles horas extra se calcularán al fichar la salida.
                 </p>
 
-                <h2>Mis registros de hoy</h2>
+                <h2>Solicitar horas extra</h2>
+                <p class="status">Indica el día laborable, los minutos adicionales y el motivo. No podrás fichar la salida después de tu turno hasta que administración lo autorice.</p>
+                <form action="gestionar_horas_extra.php" method="post">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
+                    <input type="hidden" name="action" value="request">
+                    <div class="form-grid-three">
+                        <div class="field">
+                            <label for="overtime-date">Fecha del turno</label>
+                            <input id="overtime-date" name="fecha" type="date" min="<?= (new DateTimeImmutable('yesterday', new DateTimeZone('Europe/Madrid')))->format('Y-m-d') ?>" value="<?= (new DateTimeImmutable('today', new DateTimeZone('Europe/Madrid')))->format('Y-m-d') ?>" required>
+                        </div>
+                        <div class="field">
+                            <label for="overtime-minutes">Minutos extra solicitados (máximo 720)</label>
+                            <input id="overtime-minutes" name="minutos" type="number" min="1" max="720" step="1" required>
+                        </div>
+                        <div class="field">
+                            <label for="overtime-reason">Motivo</label>
+                            <input id="overtime-reason" name="motivo" type="text" maxlength="1000" required>
+                        </div>
+                    </div>
+                    <div class="form-actions"><button class="submit-button" type="submit">Enviar solicitud de horas extra</button></div>
+                </form>
+                <h2>Mis solicitudes de horas extra</h2>
                 <div class="table-wrap">
                     <table>
-                        <thead>
-                            <tr><th scope="col">Hora</th><th scope="col">Tipo de fichaje</th><th scope="col">Jornada</th></tr>
-                        </thead>
-                        <tbody id="records-body">
-                            <tr><td class="empty-row" colspan="3">Cargando registros…</td></tr>
+                        <thead><tr><th>Fecha</th><th>Minutos</th><th>Motivo</th><th>Estado</th></tr></thead>
+                        <tbody>
+                            <?php if ($employeeOvertimeRequests === []): ?>
+                                <tr><td class="empty-row" colspan="4">Todavía no has solicitado horas extra.</td></tr>
+                            <?php else: ?>
+                                <?php foreach ($employeeOvertimeRequests as $request): ?>
+                                    <tr>
+                                        <td><?= htmlspecialchars($request['fecha'], ENT_QUOTES, 'UTF-8') ?></td>
+                                        <td><?= (int) $request['minutos'] ?></td>
+                                        <td><?= htmlspecialchars($request['motivo'], ENT_QUOTES, 'UTF-8') ?></td>
+                                        <td><?= htmlspecialchars(ucfirst($request['estado']), ENT_QUOTES, 'UTF-8') ?></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
                         </tbody>
                     </table>
                 </div>
+
+                <h2>Resumen de horas trabajadas</h2>
+                <p class="status">Consulta tus totales mensuales y semanales. El detalle de pausas se muestra únicamente para el día y se puede descargar por separado.</p>
+                <p class="chart-description">Una jornada en curso se suma al resumen cuando registras la salida o cuando el sistema la cierra automáticamente.</p>
+                <div class="field summary-month-picker">
+                    <label for="work-summary-month">Mes</label>
+                    <input id="work-summary-month" type="month" value="<?= (new DateTimeImmutable('today', new DateTimeZone('Europe/Madrid')))->format('Y-m') ?>">
+                </div>
+                <p class="status" id="work-summary-status" role="status" aria-live="polite">Cargando resumen…</p>
+                <div class="summary-metrics" aria-live="polite">
+                    <article><span>Horas del mes</span><strong id="monthly-worked-hours">—</strong></article>
+                    <article><span>Días trabajados</span><strong id="monthly-worked-days">—</strong></article>
+                    <article><span>Horas extra</span><strong id="monthly-overtime-hours">—</strong></article>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th scope="col">Semana</th><th scope="col">Días trabajados</th><th scope="col">Horas</th></tr></thead>
+                        <tbody id="work-summary-weeks">
+                            <tr><td class="empty-row" colspan="3">Cargando resumen…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <form action="exportar.php" method="get" id="employee-daily-export">
+                    <input type="hidden" name="hasta" id="employee-daily-export-end">
+                    <div class="form-grid">
+                        <div class="field">
+                            <label for="employee-daily-export-date">Descargar detalle de un día</label>
+                            <input id="employee-daily-export-date" name="desde" type="date" required>
+                        </div>
+                        <div class="form-actions"><button class="submit-button" type="submit">Descargar Excel compatible</button></div>
+                    </div>
+                </form>
+                <details class="daily-records-details">
+                    <summary>Ver fichajes y pausas de hoy</summary>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr><th scope="col">Hora</th><th scope="col">Tipo de fichaje</th><th scope="col">Jornada</th></tr>
+                            </thead>
+                            <tbody id="records-body">
+                                <tr><td class="empty-row" colspan="3">Cargando registros…</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </details>
             </section>
 
             <section class="card seccion-panel" id="absence-request" aria-labelledby="absence-request-title">
@@ -1537,6 +1847,17 @@ $absenceStatusLabels = [
                                 <option value="vacaciones">Vacaciones</option>
                                 <option value="medico">Cita médica</option>
                                 <option value="asuntos_familiares">Asuntos familiares</option>
+                                <option value="fallecimiento_familiar">Fallecimiento de familiar</option>
+                                <option value="hospitalizacion_familiar">Hospitalización o intervención de familiar</option>
+                                <option value="deber_inexcusable">Deber público o personal inexcusable</option>
+                                <option value="mudanza">Traslado de domicilio</option>
+                                <option value="matrimonio">Matrimonio o registro de pareja</option>
+                                <option value="nacimiento_cuidado">Nacimiento y cuidado de menor</option>
+                                <option value="lactancia">Cuidado del lactante</option>
+                                <option value="fuerza_mayor_familiar">Fuerza mayor familiar urgente</option>
+                                <option value="permiso_retribuido">Otro permiso retribuido</option>
+                                <option value="permiso_no_retribuido">Permiso no retribuido</option>
+                                <option value="otros">Otro motivo</option>
                             </select>
                         </div>
                         <div class="field">
@@ -1552,6 +1873,10 @@ $absenceStatusLabels = [
                             <input id="solicitud-observaciones" name="observaciones" type="text" maxlength="1000">
                         </div>
                     </div>
+                    <p class="status">
+                        Catálogo orientativo: los requisitos, duración, documentación y aprobación dependen de la normativa,
+                        del convenio y de la política de la empresa. No incluyas diagnósticos ni detalles médicos en las observaciones.
+                    </p>
                     <div class="form-actions"><button class="submit-button" type="submit"><span aria-hidden="true">▦</span> Enviar solicitud</button></div>
                 </form>
 
@@ -1561,10 +1886,10 @@ $absenceStatusLabels = [
                 <?php else: ?>
                     <div class="table-wrap">
                         <table>
-                            <thead><tr><th>Tipo</th><th>Fechas</th><th>Observaciones</th><th>Estado</th></tr></thead>
+                            <thead><tr><th>Tipo</th><th>Fechas</th><th>Observaciones</th><th>Estado</th><th>Acciones</th></tr></thead>
                             <tbody>
                                 <?php if ($absenceRecords === []): ?>
-                                    <tr><td class="empty-row" colspan="4">No has enviado solicitudes ni tienes incidencias registradas.</td></tr>
+                                    <tr><td class="empty-row" colspan="5">No has enviado solicitudes ni tienes incidencias registradas.</td></tr>
                                 <?php else: ?>
                                     <?php foreach ($absenceRecords as $absence): ?>
                                         <tr>
@@ -1572,6 +1897,52 @@ $absenceStatusLabels = [
                                             <td><?= htmlspecialchars($absence['fecha_inicio'] . ' – ' . $absence['fecha_fin'], ENT_QUOTES, 'UTF-8') ?></td>
                                             <td><?= htmlspecialchars($absence['observaciones'] ?? '', ENT_QUOTES, 'UTF-8') ?: '—' ?></td>
                                             <td><?= htmlspecialchars($absenceStatusLabels[$absence['estado']] ?? $absence['estado'], ENT_QUOTES, 'UTF-8') ?></td>
+                                            <td>
+                                                <?php if ($absence['estado'] === 'pendiente'): ?>
+                                                    <div class="absence-actions">
+                                                        <details class="absence-edit-details">
+                                                            <summary>Modificar</summary>
+                                                            <form action="gestionar_ausencias.php" method="post">
+                                                            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
+                                                            <input type="hidden" name="action" value="update_request">
+                                                            <input type="hidden" name="ausencia_id" value="<?= (int) $absence['id'] ?>">
+                                                            <div class="field">
+                                                                <label for="solicitud-tipo-<?= (int) $absence['id'] ?>">Motivo</label>
+                                                                <select id="solicitud-tipo-<?= (int) $absence['id'] ?>" name="tipo" required>
+                                                                    <?php foreach ($absenceLabels as $type => $label): ?>
+                                                                        <?php if (in_array($type, ['baja_medica', 'retraso', 'falta'], true)) continue; ?>
+                                                                        <option value="<?= htmlspecialchars($type, ENT_QUOTES, 'UTF-8') ?>"<?= $absence['tipo'] === $type ? ' selected' : '' ?>>
+                                                                            <?= htmlspecialchars($label, ENT_QUOTES, 'UTF-8') ?>
+                                                                        </option>
+                                                                    <?php endforeach; ?>
+                                                                </select>
+                                                            </div>
+                                                            <div class="field">
+                                                                <label for="solicitud-inicio-<?= (int) $absence['id'] ?>">Desde</label>
+                                                                <input id="solicitud-inicio-<?= (int) $absence['id'] ?>" name="fecha_inicio" type="date" value="<?= htmlspecialchars($absence['fecha_inicio'], ENT_QUOTES, 'UTF-8') ?>" required>
+                                                            </div>
+                                                            <div class="field">
+                                                                <label for="solicitud-fin-<?= (int) $absence['id'] ?>">Hasta</label>
+                                                                <input id="solicitud-fin-<?= (int) $absence['id'] ?>" name="fecha_fin" type="date" value="<?= htmlspecialchars($absence['fecha_fin'], ENT_QUOTES, 'UTF-8') ?>" required>
+                                                            </div>
+                                                            <div class="field">
+                                                                <label for="solicitud-observaciones-<?= (int) $absence['id'] ?>">Observaciones</label>
+                                                                <input id="solicitud-observaciones-<?= (int) $absence['id'] ?>" name="observaciones" type="text" maxlength="1000" value="<?= htmlspecialchars($absence['observaciones'] ?? '', ENT_QUOTES, 'UTF-8') ?>">
+                                                            </div>
+                                                            <button class="submit-button" type="submit">Guardar cambios</button>
+                                                            </form>
+                                                        </details>
+                                                        <form action="gestionar_ausencias.php" method="post" onsubmit="return confirm('¿Eliminar esta solicitud pendiente?');">
+                                                            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
+                                                            <input type="hidden" name="action" value="delete_request">
+                                                            <input type="hidden" name="ausencia_id" value="<?= (int) $absence['id'] ?>">
+                                                            <button class="reject-button" type="submit">Eliminar</button>
+                                                        </form>
+                                                    </div>
+                                                <?php else: ?>
+                                                    —
+                                                <?php endif; ?>
+                                            </td>
                                         </tr>
                                     <?php endforeach; ?>
                                 <?php endif; ?>

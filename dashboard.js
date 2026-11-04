@@ -191,6 +191,9 @@ function closeScheduleEditDialog() {
     if (!(scheduleEditDialog instanceof HTMLElement)) return;
     scheduleEditDialog.classList.add("hidden");
     scheduleEditDialog.setAttribute("aria-hidden", "true");
+    if (scheduleEditForm instanceof HTMLFormElement) {
+        scheduleEditForm.reset();
+    }
     lastAssignmentEditTrigger?.focus();
     lastAssignmentEditTrigger = null;
 }
@@ -268,7 +271,8 @@ document.addEventListener("keydown", (event) => {
     }
 });
 
-scheduleEditForm?.addEventListener("submit", (event) => {
+scheduleEditForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
     if (
         !(editAssignmentStart instanceof HTMLInputElement)
         || !(editAssignmentEnd instanceof HTMLInputElement)
@@ -281,8 +285,89 @@ scheduleEditForm?.addEventListener("submit", (event) => {
     const endDate = editAssignmentEnd.value;
     const breakHours = Number(editAssignmentBreak.value);
     if ((endDate && endDate < startDate) || !Number.isFinite(breakHours) || breakHours < 0 || breakHours > 24) {
-        event.preventDefault();
         window.alert("Comprueba las fechas y que las horas de pausa estén entre 0 y 24.");
+        return;
+    }
+
+    if (!(scheduleEditForm instanceof HTMLFormElement)) {
+        return;
+    }
+
+    const submitButton = scheduleEditForm.querySelector('button[type="submit"]');
+    const status = document.querySelector("#schedule-edit-status");
+    if (submitButton instanceof HTMLButtonElement) {
+        submitButton.disabled = true;
+    }
+
+    try {
+        const response = await fetch(scheduleEditForm.action, {
+            method: "POST",
+            body: new FormData(scheduleEditForm),
+            headers: { "X-Requested-With": "XMLHttpRequest" }
+        });
+        const contentType = response.headers.get("Content-Type") || "";
+        if (!contentType.includes("application/json")) {
+            throw new Error(response.ok
+                ? "El servidor devolvió una respuesta inesperada. Recarga la página e inténtalo de nuevo."
+                : `No se pudo guardar la asignación del turno (error ${response.status}).`);
+        }
+        const result = await response.json();
+        if (!response.ok || !result.success || !result.assignment) {
+            throw new Error(result.message || "No se pudo guardar la asignación del turno.");
+        }
+
+        const assignment = result.assignment;
+        const editButton = Array.from(document.querySelectorAll(".btn-editar"))
+            .find((button) => button.dataset.editAssignment === String(assignment.id));
+        const row = editButton?.closest("tr");
+        if (!(row instanceof HTMLTableRowElement) || !(editButton instanceof HTMLButtonElement)) {
+            throw new Error("No se encontró la fila de la asignación actualizada.");
+        }
+
+        document.querySelectorAll(".btn-editar").forEach((button) => {
+            if (button.dataset.templateId !== String(assignment.templateId)) return;
+            const relatedRow = button.closest("tr");
+            const breakCell = relatedRow?.querySelectorAll("td")[4];
+            if (breakCell) {
+                breakCell.textContent = `${assignment.workDays} trabajo / ${assignment.restDays} descanso · ${assignment.breakHours} h de pausa`;
+            }
+            button.dataset.breakHours = String(assignment.breakHours);
+        });
+
+        const cells = row.querySelectorAll("td");
+        cells[0].textContent = assignment.employee;
+        cells[1].textContent = assignment.shift;
+        cells[2].textContent = assignment.type === "fijo" ? "Fijo" : "Rotativo";
+        cells[3].textContent = `${assignment.startTime}–${assignment.endTime}`;
+        cells[4].textContent = `${assignment.workDays} trabajo / ${assignment.restDays} descanso · ${assignment.breakHours} h de pausa`;
+        cells[5].textContent = `${assignment.startDate} – ${assignment.endDate || "sin fecha de fin"}`;
+        editButton.dataset.employeeId = String(assignment.employeeId);
+        editButton.dataset.templateId = String(assignment.templateId);
+        editButton.dataset.startDate = assignment.startDate;
+        editButton.dataset.endDate = assignment.endDate || "";
+        editButton.dataset.breakHours = String(assignment.breakHours);
+        editButton.setAttribute("aria-label", `Editar asignación de ${assignment.employee}`);
+
+        if (status instanceof HTMLElement) {
+            status.textContent = result.message;
+            status.hidden = false;
+            status.dataset.state = "success";
+        }
+        closeScheduleEditDialog();
+    } catch (error) {
+        if (status instanceof HTMLElement) {
+            status.textContent = error instanceof Error
+                ? error.message
+                : "No se pudo guardar la asignación del turno.";
+            status.hidden = false;
+            status.dataset.state = "error";
+        } else {
+            window.alert(error instanceof Error ? error.message : "No se pudo guardar la asignación del turno.");
+        }
+    } finally {
+        if (submitButton instanceof HTMLButtonElement) {
+            submitButton.disabled = false;
+        }
     }
 });
 
@@ -307,12 +392,12 @@ if (workedCanvas && staffCanvas && dashboardDataElement) {
         const colors = {
             text: () => getComputedStyle(root).getPropertyValue("--muted").trim(),
             grid: () => getComputedStyle(root).getPropertyValue("--border").trim(),
-            accent: () => getComputedStyle(root).getPropertyValue("--accent").trim(),
-            success: () => getComputedStyle(root).getPropertyValue("--success").trim(),
-            danger: () => getComputedStyle(root).getPropertyValue("--danger").trim(),
-            lavender: () => getComputedStyle(root).getPropertyValue("--lavender").trim(),
-            neutral: () => getComputedStyle(root).getPropertyValue("--muted").trim(),
-            warning: () => getComputedStyle(root).getPropertyValue("--warning").trim()
+            worked: () => getComputedStyle(root).getPropertyValue("--chart-worked").trim(),
+            overtime: () => getComputedStyle(root).getPropertyValue("--chart-overtime").trim(),
+            working: () => getComputedStyle(root).getPropertyValue("--chart-working").trim(),
+            vacation: () => getComputedStyle(root).getPropertyValue("--chart-vacation").trim(),
+            sick: () => getComputedStyle(root).getPropertyValue("--chart-sick").trim(),
+            off: () => getComputedStyle(root).getPropertyValue("--chart-off").trim()
         };
         const chartInstances = [];
 
@@ -324,13 +409,13 @@ if (workedCanvas && staffCanvas && dashboardDataElement) {
                     {
                         label: "Horas trabajadas",
                         data: data.work.worked,
-                        backgroundColor: colors.accent(),
+                        backgroundColor: colors.worked(),
                         borderRadius: 6
                     },
                     {
                         label: "Horas extra",
                         data: data.work.overtime,
-                        backgroundColor: colors.warning(),
+                        backgroundColor: colors.overtime(),
                         borderRadius: 6
                     }
                 ]
@@ -364,7 +449,7 @@ if (workedCanvas && staffCanvas && dashboardDataElement) {
                 labels: ["Trabajando", "De vacaciones", "De baja", "Fuera de jornada / en pausa"],
                 datasets: [{
                     data: [data.staff.working, data.staff.vacation, data.staff.sick, data.staff.off],
-                    backgroundColor: [colors.success(), colors.lavender(), colors.danger(), colors.neutral()],
+                    backgroundColor: [colors.working(), colors.vacation(), colors.sick(), colors.off()],
                     borderWidth: 0
                 }]
             },
@@ -385,14 +470,14 @@ if (workedCanvas && staffCanvas && dashboardDataElement) {
             for (const chart of chartInstances) {
                 chart.options.plugins.legend.labels.color = colors.text();
                 if (chart === chartInstances[0]) {
-                    chart.data.datasets[0].backgroundColor = colors.accent();
-                    chart.data.datasets[1].backgroundColor = colors.warning();
+                    chart.data.datasets[0].backgroundColor = colors.worked();
+                    chart.data.datasets[1].backgroundColor = colors.overtime();
                 } else {
                     chart.data.datasets[0].backgroundColor = [
-                        colors.success(),
-                        colors.lavender(),
-                        colors.danger(),
-                        colors.neutral()
+                        colors.working(),
+                        colors.vacation(),
+                        colors.sick(),
+                        colors.off()
                     ];
                 }
                 if (chart.options.scales) {

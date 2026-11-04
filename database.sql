@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS usuarios (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     rol ENUM('admin', 'empleado') NOT NULL DEFAULT 'empleado',
     nombre VARCHAR(150) NOT NULL,
+    cargo VARCHAR(100) NULL,
     dni VARCHAR(20) NULL,
     direccion VARCHAR(255) NULL,
     correo VARCHAR(254) NOT NULL,
@@ -36,6 +37,7 @@ CREATE TABLE IF NOT EXISTS time_records (
     horas_trabajadas_segundos INT UNSIGNED NULL,
     horas_extra_segundos INT UNSIGNED NULL,
     es_hora_extra BOOLEAN NOT NULL DEFAULT FALSE,
+    es_cierre_automatico BOOLEAN NOT NULL DEFAULT FALSE,
     PRIMARY KEY (id),
     INDEX idx_employee_recorded_at (employee_code, recorded_at_utc),
     INDEX idx_usuario_recorded_at (usuario_id, recorded_at_utc),
@@ -112,6 +114,16 @@ BEGIN
           AND column_name = 'es_hora_extra'
     ) THEN
         ALTER TABLE time_records ADD COLUMN es_hora_extra BOOLEAN NOT NULL DEFAULT FALSE;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = DATABASE()
+          AND table_name = 'time_records'
+          AND column_name = 'es_cierre_automatico'
+    ) THEN
+        ALTER TABLE time_records ADD COLUMN es_cierre_automatico BOOLEAN NOT NULL DEFAULT FALSE;
     END IF;
 
     IF NOT EXISTS (
@@ -214,7 +226,13 @@ CREATE TABLE IF NOT EXISTS calendario_eventos (
 CREATE TABLE IF NOT EXISTS ausencias (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     usuario_id BIGINT UNSIGNED NOT NULL,
-    tipo ENUM('vacaciones', 'medico', 'asuntos_familiares', 'baja_medica', 'retraso', 'falta') NOT NULL,
+    tipo ENUM(
+        'vacaciones', 'medico', 'asuntos_familiares', 'fallecimiento_familiar',
+        'hospitalizacion_familiar', 'deber_inexcusable', 'mudanza', 'matrimonio',
+        'nacimiento_cuidado', 'lactancia', 'fuerza_mayor_familiar',
+        'permiso_retribuido', 'permiso_no_retribuido', 'otros',
+        'baja_medica', 'retraso', 'falta'
+    ) NOT NULL,
     fecha_inicio DATE NOT NULL,
     fecha_fin DATE NOT NULL,
     observaciones VARCHAR(1000) NULL,
@@ -236,6 +254,28 @@ CREATE TABLE IF NOT EXISTS ausencias (
         FOREIGN KEY (revisado_por) REFERENCES usuarios (id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT chk_ausencias_fechas CHECK (fecha_fin >= fecha_inicio)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS solicitudes_horas_extra (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    usuario_id BIGINT UNSIGNED NOT NULL,
+    fecha DATE NOT NULL,
+    minutos SMALLINT UNSIGNED NOT NULL,
+    motivo VARCHAR(1000) NOT NULL,
+    estado ENUM('pendiente', 'aprobada', 'rechazada') NOT NULL DEFAULT 'pendiente',
+    revisado_por BIGINT UNSIGNED NULL,
+    creado_en_utc DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    revisado_en_utc DATETIME(6) NULL,
+    PRIMARY KEY (id),
+    INDEX idx_solicitudes_horas_extra_estado_fecha (estado, fecha),
+    INDEX idx_solicitudes_horas_extra_usuario_fecha (usuario_id, fecha),
+    CONSTRAINT fk_solicitudes_horas_extra_usuario
+        FOREIGN KEY (usuario_id) REFERENCES usuarios (id)
+        ON UPDATE RESTRICT ON DELETE RESTRICT,
+    CONSTRAINT fk_solicitudes_horas_extra_revisor
+        FOREIGN KEY (revisado_por) REFERENCES usuarios (id)
+        ON UPDATE RESTRICT ON DELETE RESTRICT,
+    CONSTRAINT chk_solicitudes_horas_extra_minutos CHECK (minutos BETWEEN 1 AND 720)
 ) ENGINE=InnoDB;
 
 INSERT INTO turnos (nombre, tipo, hora_inicio, hora_fin, dias_trabajo, dias_descanso)

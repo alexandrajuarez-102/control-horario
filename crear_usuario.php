@@ -49,6 +49,7 @@ $address = $_POST['direccion'] ?? null;
 $email = $_POST['correo'] ?? null;
 $password = $_POST['password'] ?? null;
 $role = $_POST['rol'] ?? null;
+$jobTitle = $_POST['cargo'] ?? '';
 
 if (
     !is_string($name)
@@ -57,6 +58,7 @@ if (
     || !is_string($email)
     || !is_string($password)
     || !is_string($role)
+    || !is_string($jobTitle)
 ) {
     redirectToAdmin('invalid');
 }
@@ -65,6 +67,7 @@ $name = trim($name);
 $dni = trim($dni);
 $address = trim($address);
 $email = trim($email);
+$jobTitle = trim($jobTitle);
 
 if (
     !hasLengthBetween($name, 1, 150)
@@ -75,6 +78,7 @@ if (
     || strlen($password) < 7
     || strlen($password) > 4096
     || !in_array($role, ['admin', 'empleado'], true)
+    || ($jobTitle !== '' && !hasLengthBetween($jobTitle, 1, 100))
 ) {
     redirectToAdmin('invalid');
 }
@@ -84,12 +88,13 @@ require_once __DIR__ . '/conexion.php';
 try {
     $connection = getDatabaseConnection();
     $statement = $connection->prepare(
-        'INSERT INTO usuarios (rol, nombre, dni, direccion, correo, password)
-         VALUES (:rol, :nombre, :dni, :direccion, :correo, :password)'
+        'INSERT INTO usuarios (rol, nombre, cargo, dni, direccion, correo, password)
+         VALUES (:rol, :nombre, :cargo, :dni, :direccion, :correo, :password)'
     );
     $statement->execute([
         'rol' => $role,
         'nombre' => $name,
+        'cargo' => $jobTitle === '' ? null : $jobTitle,
         'dni' => $dni === '' ? null : $dni,
         'direccion' => $address === '' ? null : $address,
         'correo' => $email,

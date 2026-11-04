@@ -5,6 +5,9 @@ const profileForm = document.querySelector("#profile-form");
 const profileStatus = document.querySelector("#profile-status");
 const profileHistoryStatus = document.querySelector("#profile-history-status");
 const profileMonth = document.querySelector("#profile-month");
+const profileExportEmployee = document.querySelector("#profile-export-employee");
+const profileExportStart = document.querySelector("#profile-export-start");
+const profileExportEnd = document.querySelector("#profile-export-end");
 const profileRecordsBody = document.querySelector("#profile-attendance-body");
 const profileCsrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
 let activeProfileId = null;
@@ -43,7 +46,7 @@ function renderProfileRecords(records) {
         const row = document.createElement("tr");
         for (const value of [
             record.fecha,
-            record.tipo,
+            record.cierreAutomatico ? "Salida (cierre automático)" : record.tipo,
             record.hora,
             formatDuration(record.workedSeconds),
             formatDuration(record.overtimeSeconds)
@@ -54,6 +57,15 @@ function renderProfileRecords(records) {
         }
         profileRecordsBody.append(row);
     }
+}
+
+function getMonthDateRange(month) {
+    const [year, monthNumber] = month.split("-").map(Number);
+    const lastDay = new Date(year, monthNumber, 0).getDate();
+    return {
+        start: `${year}-${String(monthNumber).padStart(2, "0")}-01`,
+        end: `${year}-${String(monthNumber).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`
+    };
 }
 
 async function loadProfileHistory() {
@@ -91,6 +103,10 @@ async function openProfile(employeeId) {
     setProfileStatus(profileHistoryStatus, "");
     const now = new Date();
     profileMonth.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const exportRange = getMonthDateRange(profileMonth.value);
+    profileExportEmployee.value = employeeId;
+    profileExportStart.value = exportRange.start;
+    profileExportEnd.value = exportRange.end;
     profileRecordsBody.replaceChildren();
     profileDialog.showModal();
 
@@ -103,6 +119,7 @@ async function openProfile(employeeId) {
         if (!response.ok) throw new Error(result.error || "No se pudo cargar el perfil.");
 
         profileForm.elements.nombre.value = result.employee.nombre;
+        profileForm.elements.cargo.value = result.employee.cargo || "";
         profileForm.elements.dni.value = result.employee.dni || "";
         profileForm.elements.direccion.value = result.employee.direccion || "";
         profileForm.elements.correo.value = result.employee.correo;
@@ -161,6 +178,7 @@ profileForm?.addEventListener("submit", async (event) => {
         const row = document.querySelector(`[data-user-row="${CSS.escape(String(employee.id))}"]`);
         if (row) {
             row.querySelector("[data-profile-name]").textContent = employee.nombre;
+            row.querySelector("[data-profile-cargo]").textContent = employee.cargo || "—";
             row.querySelector("[data-profile-dni]").textContent = employee.dni || "—";
             row.querySelector("[data-profile-address]").textContent = employee.direccion || "—";
             row.querySelector("[data-profile-email]").textContent = employee.correo;

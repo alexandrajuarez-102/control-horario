@@ -7,6 +7,15 @@ const exitButton = document.querySelector("#exit-button");
 const recordsBody = document.querySelector("#records-body");
 const statusMessage = document.querySelector("#status");
 const dailySummary = document.querySelector("#daily-summary");
+const workSummaryMonth = document.querySelector("#work-summary-month");
+const workSummaryStatus = document.querySelector("#work-summary-status");
+const workSummaryBody = document.querySelector("#work-summary-weeks");
+const monthlyWorkedHours = document.querySelector("#monthly-worked-hours");
+const monthlyWorkedDays = document.querySelector("#monthly-worked-days");
+const monthlyOvertimeHours = document.querySelector("#monthly-overtime-hours");
+const employeeDailyExport = document.querySelector("#employee-daily-export");
+const employeeDailyExportDate = document.querySelector("#employee-daily-export-date");
+const employeeDailyExportEnd = document.querySelector("#employee-daily-export-end");
 const csrfTokenElement = document.querySelector('meta[name="csrf-token"]');
 const csrfToken = csrfTokenElement?.content;
 const attendanceButtons = [entryButton, pauseButton, resumeButton, exitButton];
@@ -70,7 +79,9 @@ function showRecords(records) {
         const eventCell = document.createElement("td");
         const overtimeCell = document.createElement("td");
         timeCell.textContent = madridTime.format(new Date(record.recordedAtUtc));
-        eventCell.textContent = eventLabels[record.eventType] || "Fichaje";
+        eventCell.textContent = record.automaticClosure
+            ? "Salida automática (turno cerrado)"
+            : eventLabels[record.eventType] || "Fichaje";
         if (record.eventType === "exit" && record.workedSeconds !== null) {
             overtimeCell.textContent = record.isOvertime
                 ? `Horas extra: ${formatDuration(record.overtimeSeconds)}`
@@ -111,6 +122,58 @@ async function loadRecords() {
     }
 
     showRecords(result.records);
+}
+
+async function loadWorkSummary() {
+    if (!workSummaryMonth || !workSummaryMonth.value) return;
+    workSummaryStatus.textContent = "Cargando resumen…";
+    workSummaryBody.replaceChildren();
+
+    try {
+        const query = new URLSearchParams({ mes: workSummaryMonth.value });
+        const response = await fetch(`resumen_empleado.php?${query}`, {
+            headers: { Accept: "application/json" }
+        });
+        const result = await response.json();
+        if (response.status === 401) {
+            window.location.assign("login.php");
+            return;
+        }
+        if (!response.ok) throw new Error(result.message || "No se pudo cargar el resumen.");
+
+        monthlyWorkedHours.textContent = formatDuration(result.workedSeconds);
+        monthlyWorkedDays.textContent = String(result.workedDays);
+        monthlyOvertimeHours.textContent = formatDuration(result.overtimeSeconds);
+        if (result.weeks.length === 0) {
+            const row = document.createElement("tr");
+            const cell = document.createElement("td");
+            cell.colSpan = 3;
+            cell.className = "empty-row";
+            cell.textContent = "No hay jornadas cerradas en este mes.";
+            row.append(cell);
+            workSummaryBody.append(row);
+        } else {
+            for (const week of result.weeks) {
+                const start = new Date(`${week.weekStart}T12:00:00Z`);
+                const end = new Date(start);
+                end.setUTCDate(end.getUTCDate() + 6);
+                const row = document.createElement("tr");
+                const weekCell = document.createElement("td");
+                const daysCell = document.createElement("td");
+                const hoursCell = document.createElement("td");
+                weekCell.textContent = `Del ${madridTime.format(start).split(",")[0]} al ${madridTime.format(end).split(",")[0]}`;
+                daysCell.textContent = String(week.days);
+                hoursCell.textContent = formatDuration(week.worked);
+                row.append(weekCell, daysCell, hoursCell);
+                workSummaryBody.append(row);
+            }
+        }
+        workSummaryStatus.textContent = `Resumen de ${workSummaryMonth.value}.`;
+        delete workSummaryStatus.dataset.state;
+    } catch (error) {
+        workSummaryStatus.textContent = error.message || "No se pudo cargar el resumen.";
+        workSummaryStatus.dataset.state = "error";
+    }
 }
 
 async function registerEvent(eventType) {
@@ -180,6 +243,19 @@ entryButton.addEventListener("click", () => registerEvent("entry"));
 pauseButton.addEventListener("click", () => registerEvent("pausa"));
 resumeButton.addEventListener("click", () => registerEvent("fin_pausa"));
 exitButton.addEventListener("click", () => registerEvent("exit"));
+
+if (workSummaryMonth) {
+    workSummaryMonth.value = madridDate().slice(0, 7);
+    workSummaryMonth.addEventListener("change", loadWorkSummary);
+    loadWorkSummary();
+}
+
+if (employeeDailyExport && employeeDailyExportDate && employeeDailyExportEnd) {
+    employeeDailyExportDate.value = madridDate();
+    employeeDailyExport.addEventListener("submit", () => {
+        employeeDailyExportEnd.value = employeeDailyExportDate.value;
+    });
+}
 
 loadRecords().catch((error) => {
     showRecords([]);

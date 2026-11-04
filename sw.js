@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_NAME = "control-horario-static-v6";
+const CACHE_NAME = "control-horario-static-v7";
 const STATIC_FILES = [
     "manifest.json",
     "app-icon.svg",
@@ -40,6 +40,40 @@ self.addEventListener("fetch", (event) => {
     const requestUrl = new URL(request.url);
 
     if (request.method !== "GET" || requestUrl.origin !== scopeUrl.origin) {
+        return;
+    }
+
+    if (/\.(?:php|js)$/i.test(requestUrl.pathname)) {
+        event.respondWith(
+            fetch(request).then(async (response) => {
+                const isJavaScript = /\.js$/i.test(requestUrl.pathname);
+                const cacheControl = response.headers.get("Cache-Control") || "";
+                const isPublicPhp = /\.php$/i.test(requestUrl.pathname)
+                    && /(?:^|,)\s*public(?:\s*(?:,|$))/i.test(cacheControl)
+                    && !/(?:^|,)\s*(?:private|no-store|no-cache)(?:\s*(?:,|$))/i.test(cacheControl);
+
+                if (response.ok && response.type === "basic" && (isJavaScript || isPublicPhp)) {
+                    const cache = await caches.open(CACHE_NAME);
+                    await cache.put(request, response.clone());
+                }
+                return response;
+            }).catch(async () => {
+                const cachedResponse = await caches.match(request);
+                if (cachedResponse) {
+                    return cachedResponse;
+                }
+                if (request.mode === "navigate") {
+                    const cachedOfflinePage = await caches.match(offlineUrl.href);
+                    if (cachedOfflinePage) {
+                        return cachedOfflinePage;
+                    }
+                }
+                return new Response("Recurso no disponible sin conexión.", {
+                    status: 503,
+                    headers: { "Content-Type": "text/plain; charset=utf-8" }
+                });
+            })
+        );
         return;
     }
 
