@@ -125,3 +125,63 @@ WHERE usuarios.rol = 'empleado'
         AND existente.fecha_inicio = demostracion.fecha_inicio
         AND existente.fecha_fin = demostracion.fecha_fin
   );
+
+-- Historial ficticio de los últimos 21 días naturales (solo días laborables).
+-- Se omite hoy para que los empleados puedan registrar su jornada real.
+-- No se mezclan jornadas si el empleado ya tiene algún fichaje en esa fecha.
+INSERT INTO time_records
+    (employee_code, usuario_id, event_type, recorded_at_utc, client_time_utc,
+     time_zone, latitud, longitud, horas_trabajadas_segundos,
+     horas_extra_segundos, es_hora_extra)
+SELECT CONCAT('user:', empleado.id), empleado.id, eventos.event_type,
+       TIMESTAMP(DATE_SUB(UTC_DATE(), INTERVAL dias.dia DAY), '08:00:00')
+           + INTERVAL (CASE eventos.event_type
+               WHEN 'pausa' THEN 240
+               WHEN 'fin_pausa' THEN
+                   CASE WHEN MOD(empleado.id + dias.dia, 4) = 0 THEN 270 ELSE 300 END
+               WHEN 'exit' THEN 540
+               ELSE 0
+             END) MINUTE,
+       NULL, 'Europe/Madrid', NULL, NULL,
+       CASE
+           WHEN eventos.event_type <> 'exit' THEN NULL
+           WHEN MOD(empleado.id + dias.dia, 4) = 0 THEN 30600
+           ELSE 28800
+       END,
+       CASE
+           WHEN eventos.event_type = 'exit'
+            AND MOD(empleado.id + dias.dia, 4) = 0 THEN 1800
+           WHEN eventos.event_type = 'exit' THEN 0
+           ELSE NULL
+       END,
+       eventos.event_type = 'exit'
+           AND MOD(empleado.id + dias.dia, 4) = 0
+FROM (
+    SELECT 1 AS dia UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL
+    SELECT 4 UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL
+    SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9 UNION ALL
+    SELECT 10 UNION ALL SELECT 11 UNION ALL SELECT 12 UNION ALL
+    SELECT 13 UNION ALL SELECT 14 UNION ALL SELECT 15 UNION ALL
+    SELECT 16 UNION ALL SELECT 17 UNION ALL SELECT 18 UNION ALL
+    SELECT 19 UNION ALL SELECT 20 UNION ALL SELECT 21
+) AS dias
+CROSS JOIN (
+    SELECT 'entry' AS event_type
+    UNION ALL SELECT 'pausa'
+    UNION ALL SELECT 'fin_pausa'
+    UNION ALL SELECT 'exit'
+) AS eventos
+JOIN usuarios AS empleado
+  ON empleado.correo LIKE 'empleado.demo%@example.test'
+ AND empleado.rol = 'empleado'
+WHERE DAYOFWEEK(DATE_SUB(UTC_DATE(), INTERVAL dias.dia DAY)) BETWEEN 2 AND 6
+  AND NOT EXISTS (
+      SELECT 1
+      FROM time_records AS existente
+      WHERE existente.usuario_id = empleado.id
+        AND existente.recorded_at_utc >=
+            TIMESTAMP(DATE_SUB(UTC_DATE(), INTERVAL dias.dia DAY), '00:00:00')
+        AND existente.recorded_at_utc <
+            TIMESTAMP(DATE_SUB(UTC_DATE(), INTERVAL dias.dia DAY), '00:00:00')
+                + INTERVAL 1 DAY
+  );

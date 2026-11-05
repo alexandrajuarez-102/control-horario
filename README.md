@@ -127,7 +127,9 @@ festivos compartidos, y solo administración puede añadirlos. FullCalendar se
 carga desde CDN, por lo que su interfaz requiere conexión a Internet.
 
 En una base Docker ya creada, aplica primero el esquema adicional y, si quieres
-cargar datos ficticios, importa `datos_prueba.sql` desde la carpeta del proyecto:
+cargar datos ficticios (incluido un historial de fichajes de las últimas tres
+semanas para los empleados de prueba), importa `datos_prueba.sql` desde la
+carpeta del proyecto:
 
 ```powershell
 docker compose cp migracion_funcionalidades.sql db:/tmp/migracion-funcionalidades.sql
